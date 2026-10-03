@@ -154,6 +154,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
   final _tvPlayPauseFocus = FocusNode(debugLabel: 'LiveTvPlayPause');
   final _tvChannelsFocus = FocusNode(debugLabel: 'LiveTvChannels');
   final _tvGuideFocus = FocusNode(debugLabel: 'LiveTvGuide');
+  final _tvRecordFocus = FocusNode(debugLabel: 'LiveTvRecord');
   final _tvAudioFocus = FocusNode(debugLabel: 'LiveTvAudio');
   final _tvSubtitleFocus = FocusNode(debugLabel: 'LiveTvSubtitle');
   final _tvBitrateFocus = FocusNode(debugLabel: 'LiveTvBitrate');
@@ -186,6 +187,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     _tvPlayPauseFocus.addListener(_onControlFocusChanged);
     _tvChannelsFocus.addListener(_onControlFocusChanged);
     _tvGuideFocus.addListener(_onControlFocusChanged);
+    _tvRecordFocus.addListener(_onControlFocusChanged);
     _tvAudioFocus.addListener(_onControlFocusChanged);
     _tvSubtitleFocus.addListener(_onControlFocusChanged);
     _tvBitrateFocus.addListener(_onControlFocusChanged);
@@ -249,6 +251,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     _tvPlayPauseFocus.removeListener(_onControlFocusChanged);
     _tvChannelsFocus.removeListener(_onControlFocusChanged);
     _tvGuideFocus.removeListener(_onControlFocusChanged);
+    _tvRecordFocus.removeListener(_onControlFocusChanged);
     _tvAudioFocus.removeListener(_onControlFocusChanged);
     _tvSubtitleFocus.removeListener(_onControlFocusChanged);
     _tvBitrateFocus.removeListener(_onControlFocusChanged);
@@ -257,6 +260,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     _tvPlayPauseFocus.dispose();
     _tvChannelsFocus.dispose();
     _tvGuideFocus.dispose();
+    _tvRecordFocus.dispose();
     _tvAudioFocus.dispose();
     _tvSubtitleFocus.dispose();
     _tvBitrateFocus.dispose();
@@ -825,6 +829,62 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     } catch (_) {}
   }
 
+  /// Starts or stops recording for the programme currently airing on the
+  /// tuned channel. This is deliberately handled directly from the Live TV
+  /// player so a viewer can hit REC without leaving playback.
+  Future<void> _toggleCurrentProgramRecording() async {
+    final program = _currentProgram;
+    if (program == null || !program.isLive || program.id.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nessun programma in onda da registrare')),
+      );
+      return;
+    }
+
+    final wasRecording = program.hasTimer;
+    try {
+      if (wasRecording) {
+        final timerId = program.rawData['TimerId']?.toString();
+        if (timerId == null || timerId.isEmpty) {
+          throw StateError('TimerId missing for programme ${program.id}');
+        }
+        await _client.liveTvApi.cancelTimer(timerId);
+      } else {
+        await _client.liveTvApi.createTimer(program.id);
+      }
+
+      // Give Jellyfin a moment to expose the updated TimerId, then refresh the
+      // current EPG item so the OSD icon changes immediately.
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      await _fetchCurrentProgram();
+
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            wasRecording ? l10n.recordingCancelled : l10n.programSetToRecord,
+          ),
+        ),
+      );
+      _showInfo();
+    } catch (_) {
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            wasRecording
+                ? l10n.failedToCancelRecording
+                : l10n.unableToCreateRecording,
+          ),
+        ),
+      );
+      _showInfo();
+    }
+  }
+
   void _startProgramRefresh() {
     _programRefreshTimer = Timer.periodic(
       const Duration(minutes: 1),
@@ -856,6 +916,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     _tvPlayPauseFocus,
     _tvChannelsFocus,
     _tvGuideFocus,
+    if (_currentProgram?.isLive == true) _tvRecordFocus,
     if (_streamsOfType('Audio').length > 1) _tvAudioFocus,
     if (_hasSubtitleChoices) _tvSubtitleFocus,
     _tvBitrateFocus,
@@ -1629,6 +1690,10 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
             unawaited(_showChannelPicker());
             return KeyEventResult.handled;
           }
+          if (focused == _tvRecordFocus) {
+            unawaited(_toggleCurrentProgramRecording());
+            return KeyEventResult.handled;
+          }
         }
 
         _togglePlayback();
@@ -2052,6 +2117,19 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
             tooltip: l10n.guide,
             onPressed: () => unawaited(_showChannelPicker()),
           ),
+          if (_currentProgram?.isLive == true) ...[
+            const SizedBox(width: AppSpacing.spaceSm),
+            _buildOverlayControlButton(
+              focusNode: PlatformDetection.isTV ? _tvRecordFocus : null,
+              icon: _currentProgram!.hasTimer
+                  ? Icons.stop_circle_rounded
+                  : Icons.fiber_manual_record,
+              tooltip: _currentProgram!.hasTimer
+                  ? l10n.cancelRecordingAction
+                  : l10n.record,
+              onPressed: () => unawaited(_toggleCurrentProgramRecording()),
+            ),
+          ],
           if (PlatformDetection.isMobile) ...[
             const SizedBox(width: AppSpacing.spaceSm),
             _buildOverlayControlButton(
