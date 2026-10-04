@@ -24,10 +24,14 @@ jobs:
         run: flutter pub get
       - name: Check changed Dart files before building
         run: |
-          dart format lib/data/viewmodels/recordings_view_model.dart lib/ui/screens/livetv/live_tv_player_screen.dart lib/ui/screens/livetv/live_tv_recordings_screen.dart test/data/viewmodels/recording_delete_test.dart
-          flutter analyze --no-fatal-infos --no-fatal-warnings lib/data/viewmodels/recordings_view_model.dart lib/ui/screens/livetv/live_tv_player_screen.dart lib/ui/screens/livetv/live_tv_recordings_screen.dart test/data/viewmodels/recording_delete_test.dart
+          dart format lib/data/viewmodels/recordings_view_model.dart lib/ui/screens/livetv/live_tv_player_screen.dart lib/ui/screens/livetv/live_tv_recordings_screen.dart test/data/viewmodels/recording_delete_test.dart lib/util/live_tv_recording.dart test/util/live_tv_recording_test.dart packages/server_core/lib/src/api/live_tv_api.dart packages/server_jellyfin/lib/src/api/jellyfin_live_tv_api.dart packages/server_emby/lib/src/api/emby_live_tv_api.dart
+          flutter analyze --no-fatal-infos --no-fatal-warnings lib/data/viewmodels/recordings_view_model.dart lib/ui/screens/livetv/live_tv_player_screen.dart lib/ui/screens/livetv/live_tv_recordings_screen.dart test/data/viewmodels/recording_delete_test.dart lib/util/live_tv_recording.dart test/util/live_tv_recording_test.dart packages/server_core/lib/src/api/live_tv_api.dart packages/server_jellyfin/lib/src/api/jellyfin_live_tv_api.dart packages/server_emby/lib/src/api/emby_live_tv_api.dart
       - name: Test recording deletion and existing Live TV behavior
-        run: flutter test test/data/viewmodels/recording_delete_test.dart test/data/viewmodels/recording_image_url_test.dart test/viewmodels/live_tv_guide_view_model_test.dart
+        run: flutter test test/data/viewmodels/recording_delete_test.dart test/data/viewmodels/recording_image_url_test.dart test/viewmodels/live_tv_guide_view_model_test.dart test/util/live_tv_recording_test.dart
+      - name: Test manual recording requests
+        run: |
+          (cd packages/server_jellyfin && flutter pub get && flutter test test/jellyfin_live_tv_api_test.dart)
+          (cd packages/server_emby && flutter pub get && flutter test test/emby_live_tv_api_test.dart)
       - name: Set up signing
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}

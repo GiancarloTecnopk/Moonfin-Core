@@ -150,6 +150,37 @@ class JellyfinLiveTvApi implements LiveTvApi {
   }
 
   @override
+  Future<void> createChannelTimer({
+    required String channelId,
+    required String name,
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    if (channelId.isEmpty || !endDate.isAfter(startDate)) {
+      throw ArgumentError('Invalid recording interval or channel');
+    }
+    Map<String, dynamic> payload = {};
+    try {
+      final defaults = await _dio.get('/LiveTv/Timers/Defaults');
+      payload = Map<String, dynamic>.from(defaults.data as Map);
+    } catch (_) {
+      // Servers without defaults can still accept an explicit channel timer.
+    }
+    payload.remove('Id');
+    payload.remove('ProgramId');
+    payload.remove('SeriesTimerId');
+    payload.addAll({
+      'ChannelId': channelId,
+      'Name': name,
+      'StartDate': startDate.toUtc().toIso8601String(),
+      'EndDate': endDate.toUtc().toIso8601String(),
+      'PrePaddingSeconds': 0,
+      'PostPaddingSeconds': 0,
+    });
+    await _dio.post('/LiveTv/Timers', data: payload);
+  }
+
+  @override
   Future<void> createSeriesTimer(String programId) async {
     await _dio.post(
       '/LiveTv/SeriesTimers',

@@ -36,6 +36,44 @@ class _Capture extends Interceptor {
 }
 
 void main() {
+  group('manual channel recording without EPG', () {
+    for (final defaultsAvailable in [true, false]) {
+      test('UTC interval and no ProgramId, defaults: $defaultsAvailable', () async {
+        final cap = _Capture();
+        if (defaultsAvailable) {
+          cap.defaultsBody = {'Priority': 7, 'ProgramId': 'stale', 'Id': 'old'};
+        }
+        final api = EmbyLiveTvApi(Dio()..interceptors.add(cap));
+        final start = DateTime.parse('2026-10-04T14:00:00+02:00');
+        await api.createChannelTimer(
+          channelId: 'channel-1', name: 'No EPG', startDate: start,
+          endDate: start.add(const Duration(hours: 1)),
+        );
+        expect(cap.all.first.queryParameters.containsKey('ProgramId'), isFalse);
+        final body = cap.last!.data as Map<String, dynamic>;
+        expect(cap.last!.path, '/LiveTv/Timers');
+        expect(body['ChannelId'], 'channel-1');
+        expect(body['StartDate'], '2026-10-04T12:00:00.000Z');
+        expect(body['EndDate'], '2026-10-04T13:00:00.000Z');
+        expect(body.containsKey('ProgramId'), isFalse);
+        expect(body.containsKey('Id'), isFalse);
+        expect(body['PrePaddingSeconds'], 0);
+        expect(body['PostPaddingSeconds'], 0);
+        if (defaultsAvailable) expect(body['Priority'], 7);
+      });
+    }
+    test('invalid interval fails without sending a request', () async {
+      final cap = _Capture();
+      final api = EmbyLiveTvApi(Dio()..interceptors.add(cap));
+      final start = DateTime.utc(2026, 10, 4);
+      await expectLater(api.createChannelTimer(
+        channelId: 'channel-1', name: 'No EPG',
+        startDate: start, endDate: start,
+      ), throwsArgumentError);
+      expect(cap.all, isEmpty);
+    });
+  });
+
   group('EmbyLiveTvApi.getGuide /LiveTv/Programs transport', () {
     test('small channel list → GET with comma-joined ChannelIds string', () async {
       final cap = _Capture();

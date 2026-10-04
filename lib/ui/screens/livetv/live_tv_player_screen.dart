@@ -24,6 +24,7 @@ import '../../../playback/media3_player_backend.dart';
 import '../../../preference/preference_constants.dart';
 import '../../../preference/user_preferences.dart';
 import '../../../util/clock_format.dart';
+import '../../../util/live_tv_recording.dart';
 import '../../../util/subtitle_track_logic.dart';
 import '../../../util/play_method_label.dart';
 import '../../../util/platform_detection.dart';
@@ -93,6 +94,25 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
   Timer? _hideTimer;
   bool _isStopping = false;
   bool _recordingBusy = false;
+  final Map<String, String> _channelTimers = {};
+  bool get _channelRecording => _channelTimers.containsKey(_currentChannel.id);
+
+  Future<String?> _refreshChannelRecording(String channelId) async {
+    final response = await _client.liveTvApi.getTimers();
+    final id = activeChannelTimerId(
+      (response['Items'] as List?) ?? [], channelId, DateTime.now(),
+    );
+    if (mounted) {
+      setState(() {
+        if (id == null) {
+          _channelTimers.remove(channelId);
+        } else {
+          _channelTimers[channelId] = id;
+        }
+      });
+    }
+    return id;
+  }
   ZoomMode _zoomMode = ZoomMode.fit;
   bool _isSwitching = false;
   bool _isGuidePickerOpen = false;
@@ -768,6 +788,9 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
   Future<void> _fetchCurrentProgram() async {
     final channelId = _currentChannel.id;
     try {
+      await _refreshChannelRecording(channelId);
+    } catch (_) {}
+    try {
       final now = DateTime.now();
       final response = await _client.liveTvApi.getGuide(
         startDate: now.subtract(const Duration(minutes: 30)),
@@ -778,7 +801,11 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
         userId: _client.userId,
       );
       final items = (response['Items'] as List?) ?? [];
-      if (items.isEmpty || !mounted || _currentChannel.id != channelId) return;
+      if (!mounted || _currentChannel.id != channelId) return;
+      if (items.isEmpty) {
+        setState(() => _currentProgram = null);
+        return;
+      }
 
       Map<String, dynamic>? selected;
       DateTime? selectedStart;
@@ -792,9 +819,6 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
         final end = DateTime.tryParse(endStr)?.toLocal();
         if (start == null || end == null) continue;
 
-        selected ??= raw;
-        selectedStart ??= start;
-        selectedEnd ??= end;
         if (!now.isBefore(start) && now.isBefore(end)) {
           selected = raw;
           selectedStart = start;
@@ -804,6 +828,9 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
       }
 
       if (selected == null || selectedStart == null || selectedEnd == null) {
+        if (mounted && _currentChannel.id == channelId) {
+          setState(() => _currentProgram = null);
+        }
         return;
       }
 
@@ -842,27 +869,53 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
   /// player so a viewer can hit REC without leaving playback.
   Future<void> _toggleCurrentProgramRecording() async {
     if (_recordingBusy || _isSwitching) return;
-    final program = _currentProgram;
-    if (program == null || !program.isLive || program.id.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nessun programma in onda da registrare')),
-      );
-      return;
-    }
-
-    final wasRecording = program.hasTimer;
-    final recordingChannelId = _currentChannel.id;
+    final channel = _currentChannel;
+    final recordingChannelId = channel.id;
+    var wasRecording = false;
     setState(() => _recordingBusy = true);
     try {
-      if (wasRecording) {
-        final timerId = program.rawData['TimerId']?.toString();
-        if (timerId == null || timerId.isEmpty) {
-          throw StateError('TimerId missing for programme ${program.id}');
-        }
+      final timerId = await _refreshChannelRecording(channel.id);
+      if (!mounted || _currentChannel.id != channel.id) return;
+      wasRecording = timerId != null;
+      final program = _currentProgram;
+      if (timerId != null) {
         await _client.liveTvApi.cancelTimer(timerId);
-      } else {
+        if (mounted) setState(() => _channelTimers.remove(channel.id));
+      } else if (program != null && program.isLive && program.id.isNotEmpty) {
         await _client.liveTvApi.createTimer(program.id);
+      } else {
+        final minutes = await showDialog<int>(
+          context: context,
+          builder: (dialogContext) => SimpleDialog(
+            title: const Text('Registrazione senza EPG'),
+            children: [
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                child: Text('Scegli la durata della registrazione'),
+              ),
+              for (final duration in [30, 60, 120, 180])
+                TextButton(
+                  autofocus: duration == 60,
+                  onPressed: () => Navigator.of(dialogContext).pop(duration),
+                  child: Text('$duration minuti'),
+                ),
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Annulla'),
+              ),
+            ],
+          ),
+        );
+        if (!mounted || minutes == null || _currentChannel.id != channel.id) {
+          return;
+        }
+        final start = DateTime.now();
+        await _client.liveTvApi.createChannelTimer(
+          channelId: channel.id,
+          name: channel.name,
+          startDate: start,
+          endDate: start.add(Duration(minutes: minutes)),
+        );
       }
 
       // Give Jellyfin a moment to expose the updated TimerId, then refresh the
@@ -893,7 +946,10 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
       );
       _showInfo();
     } finally {
-      if (mounted) setState(() => _recordingBusy = false);
+      if (mounted) {
+        setState(() => _recordingBusy = false);
+        if (_currentChannel.id == recordingChannelId) _showInfo();
+      }
     }
   }
 
@@ -928,7 +984,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     _tvPlayPauseFocus,
     _tvChannelsFocus,
     _tvGuideFocus,
-    if (_currentProgram?.isLive == true) _tvRecordFocus,
+    _tvRecordFocus,
     _tvZoomFocus,
     if (_streamsOfType('Audio').length > 1) _tvAudioFocus,
     if (_hasSubtitleChoices) _tvSubtitleFocus,
@@ -2075,7 +2131,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
                 ],
               ),
             ),
-            if (_currentProgram?.hasTimer == true)
+            if (_channelRecording)
               const Padding(
                 padding: EdgeInsets.only(left: AppSpacing.spaceSm),
                 child: Icon(
@@ -2178,15 +2234,15 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
             tooltip: l10n.guide,
             onPressed: () => unawaited(_showChannelPicker()),
           ),
-          if (_currentProgram?.isLive == true) ...[
+          ...[
             const SizedBox(width: AppSpacing.spaceSm),
             _buildOverlayControlButton(
               focusNode: PlatformDetection.isTV ? _tvRecordFocus : null,
-              icon: _currentProgram!.hasTimer
+              icon: _channelRecording
                   ? Icons.stop_circle_rounded
                   : Icons.fiber_manual_record,
-              tooltip: _currentProgram!.hasTimer ? 'STOP REC' : 'REC',
-              label: _recordingBusy ? 'Attendere…' : (_currentProgram!.hasTimer ? 'STOP REC' : 'REC'),
+              tooltip: _channelRecording ? 'STOP REC' : 'REC',
+              label: _recordingBusy ? 'Attendere…' : (_channelRecording ? 'STOP REC' : 'REC'),
               color: Colors.redAccent,
               onPressed: () => unawaited(_toggleCurrentProgramRecording()),
             ),
