@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 import 'package:moonfin_design/moonfin_design.dart';
@@ -29,6 +30,7 @@ class _LiveTvRecordingsScreenState extends State<LiveTvRecordingsScreen> {
   late final RecordingsViewModel _vm;
   late final ScheduleViewModel _scheduleVm;
   late final SeriesRecordingsViewModel _seriesVm;
+  bool _deletingRecording = false;
   _RecordingsTab _activeTab = _RecordingsTab.recordings;
 
   @override
@@ -124,6 +126,14 @@ class _LiveTvRecordingsScreenState extends State<LiveTvRecordingsScreen> {
             isActive: _activeTab == _RecordingsTab.series,
             onPressed: () => setState(() => _activeTab = _RecordingsTab.series),
           ),
+          if (_activeTab == _RecordingsTab.recordings && _vm.focusedItem != null) ...[
+            const SizedBox(width: 12),
+            _RecordingsPillButton(
+              icon: Icons.delete_outline_rounded,
+              label: _deletingRecording ? 'Attendere…' : 'Elimina',
+              onPressed: () => _deleteRecording(_vm.focusedItem!),
+            ),
+          ],
           const SizedBox(width: 12),
           _RecordingsPillButton(
             icon: Icons.arrow_back,
@@ -156,7 +166,7 @@ class _LiveTvRecordingsScreenState extends State<LiveTvRecordingsScreen> {
     }
     final l10n = AppLocalizations.of(context);
     final rows = <Widget>[];
-    void addRow(String title, List<RecordingItem> items) {
+    void addRow(String title, List<RecordingItem> items, {bool scheduled = false}) {
       if (items.isEmpty) {
         return;
       }
@@ -165,13 +175,14 @@ class _LiveTvRecordingsScreenState extends State<LiveTvRecordingsScreen> {
           title: title,
           items: items,
           imageApi: _vm.imageApi,
-          onItemFocused: _vm.setFocusedItem,
+          onItemFocused: scheduled ? (_) => _vm.clearFocusedItem() : _vm.setFocusedItem,
           onItemTap: _onItemTap,
+          onItemDelete: scheduled ? null : _deleteRecording,
         ),
       );
     }
 
-    addRow(l10n.scheduledInNext24Hours, _vm.scheduledNext24h);
+    addRow(l10n.scheduledInNext24Hours, _vm.scheduledNext24h, scheduled: true);
     addRow(l10n.recentRecordings, _vm.recentRecordings);
     addRow(l10n.tvSeries, _vm.seriesRecordings);
     addRow(l10n.movies, _vm.movieRecordings);
@@ -326,6 +337,47 @@ class _LiveTvRecordingsScreenState extends State<LiveTvRecordingsScreen> {
           );
         }
       }
+    }
+  }
+
+  Future<void> _deleteRecording(RecordingItem item) async {
+    if (_deletingRecording) return;
+    _deletingRecording = true;
+    final l10n = AppLocalizations.of(context);
+    try {
+      final confirmed = await showFocusRestoringDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF1A1A2E),
+          title: Text('Elimina registrazione', style: const TextStyle(color: Colors.white)),
+          content: Text(l10n.deleteConfirmMessage(item.name),
+            style: const TextStyle(color: Colors.white)),
+          actions: [
+            TextButton(autofocus: true,
+              onPressed: () => Navigator.of(ctx, rootNavigator: true).pop(false),
+              child: Text(l10n.cancel)),
+            TextButton(
+              onPressed: () => Navigator.of(ctx, rootNavigator: true).pop(true),
+              style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+              child: Text(l10n.delete)),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      setState(() {});
+      await _vm.deleteRecording(item);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Registrazione eliminata')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.failedToDeleteItem)),
+      );
+    } finally {
+      _deletingRecording = false;
+      if (mounted) setState(() {});
     }
   }
 
@@ -518,15 +570,14 @@ class _RecordingsPillButtonState extends State<_RecordingsPillButton> {
                 : Colors.white.withValues(alpha: 0.10),
             borderRadius: AppRadius.circular(20),
           ),
-          child: widget.icon != null
-              ? Icon(widget.icon, color: Colors.white.withValues(alpha: active ? 1.0 : 0.8), size: 18)
-              : Text(
-                  widget.label ?? '',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: active ? 1.0 : 0.8),
-                    fontSize: 13,
-                  ),
-                ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            if (widget.icon != null)
+              Icon(widget.icon, color: Colors.white.withValues(alpha: active ? 1.0 : 0.8), size: 18),
+            if (widget.icon != null && widget.label != null) const SizedBox(width: 6),
+            if (widget.label != null)
+              Text(widget.label!, style: TextStyle(
+                color: Colors.white.withValues(alpha: active ? 1.0 : 0.8), fontSize: 13)),
+          ]),
         ),
       ),
     );
@@ -539,6 +590,7 @@ class _RecordingRow extends StatelessWidget {
   final ImageApi imageApi;
   final ValueChanged<RecordingItem> onItemFocused;
   final ValueChanged<RecordingItem> onItemTap;
+  final ValueChanged<RecordingItem>? onItemDelete;
 
   const _RecordingRow({
     required this.title,
@@ -546,6 +598,7 @@ class _RecordingRow extends StatelessWidget {
     required this.imageApi,
     required this.onItemFocused,
     required this.onItemTap,
+    this.onItemDelete,
   });
 
   @override
@@ -576,10 +629,12 @@ class _RecordingRow extends StatelessWidget {
               itemBuilder: (context, index) {
                 final item = items[index];
                 return _RecordingCard(
+                  key: ValueKey(item.id),
                   item: item,
                   imageUrl: item.imageUrl(imageApi),
                   onFocused: () => onItemFocused(item),
                   onTap: () => onItemTap(item),
+                  onDelete: onItemDelete == null ? null : () => onItemDelete!(item),
                 );
               },
             ),
@@ -595,12 +650,15 @@ class _RecordingCard extends StatefulWidget {
   final String? imageUrl;
   final VoidCallback onFocused;
   final VoidCallback onTap;
+  final VoidCallback? onDelete;
 
   const _RecordingCard({
+    super.key,
     required this.item,
     required this.imageUrl,
     required this.onFocused,
     required this.onTap,
+    this.onDelete,
   });
 
   @override
@@ -624,12 +682,28 @@ class _RecordingCardState extends State<_RecordingCard> with FocusStateMixin {
       onEnter: (_) => setHovered(true),
       onExit: (_) => setHovered(false),
       child: Focus(
+        onKeyEvent: (_, event) {
+          if (event is! KeyDownEvent) return KeyEventResult.ignored;
+          if (event.logicalKey == LogicalKeyboardKey.select ||
+              event.logicalKey == LogicalKeyboardKey.enter) {
+            widget.onTap();
+            return KeyEventResult.handled;
+          }
+          if (widget.onDelete != null &&
+              (event.logicalKey == LogicalKeyboardKey.contextMenu ||
+               event.logicalKey == LogicalKeyboardKey.delete)) {
+            widget.onDelete!();
+            return KeyEventResult.handled;
+          }
+          return KeyEventResult.ignored;
+        },
         onFocusChange: (focused) {
           setFocused(focused);
           if (focused) widget.onFocused();
         },
         child: GestureDetector(
           onTap: widget.onTap,
+          onLongPress: widget.onDelete,
           child: AnimatedScale(
             scale: scale,
             duration: const Duration(milliseconds: 150),

@@ -158,6 +158,42 @@ class RecordingsViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Delete only a completed server item; scheduled timers use cancelTimer.
+  Future<void> deleteRecording(RecordingItem item) async {
+    if (item.id.isEmpty || !_recordedItems.any((recording) => recording.id == item.id)) {
+      throw StateError('Not a recorded item');
+    }
+    await _client.itemsApi.deleteItem(item.id);
+    if (_disposed) return;
+    List<RecordingItem> withoutItem(List<RecordingItem> items) =>
+        items.where((recording) => recording.id != item.id).toList();
+    _recentRecordings = withoutItem(_recentRecordings);
+    _seriesRecordings = withoutItem(_seriesRecordings);
+    _movieRecordings = withoutItem(_movieRecordings);
+    _sportsRecordings = withoutItem(_sportsRecordings);
+    _kidsRecordings = withoutItem(_kidsRecordings);
+    if (_focusedItem?.id == item.id) _focusedItem = null;
+    notifyListeners();
+  }
+
+  Iterable<RecordingItem> get _recordedItems => [
+    ..._recentRecordings, ..._seriesRecordings, ..._movieRecordings,
+    ..._sportsRecordings, ..._kidsRecordings,
+  ];
+
+  void clearFocusedItem() {
+    _focusedItem = null;
+    notifyListeners();
+  }
+
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
   Future<void> load() async {
     _state = RecordingsState.loading;
     notifyListeners();
@@ -184,7 +220,7 @@ class RecordingsViewModel extends ChangeNotifier {
     } catch (_) {
       _state = RecordingsState.error;
     }
-    notifyListeners();
+    if (!_disposed) notifyListeners();
   }
 
   Future<List<RecordingItem>> _fetchRecordings({

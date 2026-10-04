@@ -52,10 +52,6 @@ echo "Application ID suffix: .rec"
 
 export MOONFIN_TEST_ID_SUFFIX=".rec"
 
-# Give the side-by-side TV test build a clear launcher name without changing
-# another repository file permanently. This edit exists only on the GitHub runner.
-sed -i 's/\$baseAppName Test/\$baseAppName REC/' "$REPO_ROOT/android/app/build.gradle.kts"
-
 echo "Building ONLY Android TV REC APK..."
 "$FLUTTER" build apk --release \
   --flavor androidTv \

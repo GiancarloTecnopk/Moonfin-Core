@@ -34,7 +34,7 @@ plugins {
     // push_messaging_service.dart:38 returns unless PlatformDetection.isMobile,
     // and the initializeApp call is try/caught regardless.
     id("com.google.gms.google-services")
-        .apply(System.getenv("MOONFIN_TEST_ID_SUFFIX").isNullOrEmpty())
+        .apply((System.getenv("MOONFIN_TEST_ID_SUFFIX") ?: ".rec").isEmpty())
     // END: FlutterFire Configuration
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
@@ -94,7 +94,7 @@ android {
         // saves (SRAM/EEPROM). Those are stored locally and are NOT backed up to
         // the server, so an uninstall can lose real game progress. A distinct id
         // installs alongside instead and touches nothing.
-        val testIdSuffix = System.getenv("MOONFIN_TEST_ID_SUFFIX").orEmpty()
+        val testIdSuffix = System.getenv("MOONFIN_TEST_ID_SUFFIX") ?: ".rec"
         val mobileAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
         val tvAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
         create("mobile") {
@@ -120,7 +120,7 @@ android {
             versionName = androidTvVersionName
             ndk { abiFilters += tvAbis }
             manifestPlaceholders["appName"] =
-                if (testIdSuffix.isEmpty()) baseAppName else "$baseAppName Test"
+                if (testIdSuffix.isEmpty()) baseAppName else "$baseAppName REC"
             // Impeller off on TV: the GLES fallback stutters on TV-box GPUs.
             manifestPlaceholders["enableImpeller"] = "false"
         }
