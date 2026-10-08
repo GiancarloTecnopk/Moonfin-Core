@@ -59,3 +59,32 @@ jobs:
           name: Moonfin-REC-AndroidTV
           path: Moonfin_AndroidTV_v*_REC.apk
           if-no-files-found: error
+
+
+  windows-x64-rec:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+      - name: Resolve dependencies
+        run: flutter pub get
+      - name: Build Windows x64 installer
+        shell: pwsh
+        run: .\build-windows.ps1 -Architecture x64
+      - name: Verify Windows x64 artifact
+        shell: pwsh
+        run: |
+          $artifacts = Get-ChildItem -Path . -Filter "Moonfin_Windows_v*.exe" -File -ErrorAction SilentlyContinue
+          if (-not $artifacts) {
+            throw "Windows build did not produce Moonfin_Windows_v*.exe"
+          }
+          $artifacts | ForEach-Object { Write-Host $_.FullName }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Moonfin-REC-Windows-x64
+          path: Moonfin_Windows_v*.exe
+          if-no-files-found: error
