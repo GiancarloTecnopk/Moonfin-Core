@@ -131,6 +131,8 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
 
   GuideProgram? _currentProgram;
   Timer? _programRefreshTimer;
+  Timer? _recordingBlinkTimer;
+  bool _recordingBlinkOn = true;
   StreamSubscription<PlayerBackend>? _backendSub;
 
   /// Guards the focus reclaim below against fighting another widget forever.
@@ -221,6 +223,16 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     _playCurrentChannel();
     _scheduleHide();
     _startProgramRefresh();
+    _recordingBlinkTimer = Timer.periodic(
+      const Duration(milliseconds: 750),
+      (_) {
+        if (mounted && _channelRecording) {
+          setState(() => _recordingBlinkOn = !_recordingBlinkOn);
+        } else {
+          _recordingBlinkOn = true;
+        }
+      },
+    );
 
     WidgetsBinding.instance.addObserver(this);
     if (PlatformDetection.isMobile) {
@@ -245,6 +257,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     _carouselPrewarm?.dispose();
     _hideTimer?.cancel();
     _programRefreshTimer?.cancel();
+    _recordingBlinkTimer?.cancel();
     _backendSub?.cancel();
     _prefs.removeListener(_applySubtitleStyle);
     FocusManager.instance.removeListener(_onGlobalFocusChanged);
@@ -1873,6 +1886,32 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
                   if (PlatformDetection.isMobile) _buildVolumeOverlay(),
                   if (_isGuidePickerOpen) _buildGuideOverlay(),
                   if (_isCarouselOpen) _buildChannelCarouselOverlay(),
+                  if (_channelRecording)
+                    Positioned(
+                      top: 26,
+                      right: 30,
+                      child: IgnorePointer(
+                        child: AnimatedOpacity(
+                          opacity: _recordingBlinkOn ? 1.0 : 0.18,
+                          duration: const Duration(milliseconds: 220),
+                          child: Container(
+                            width: 14,
+                            height: 14,
+                            decoration: const BoxDecoration(
+                              color: Colors.red,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Color(0x99000000),
+                                  blurRadius: 5,
+                                  spreadRadius: 1,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   if (_infoVisible &&
                       !_isGuidePickerOpen &&
                       !_isCarouselOpen) ...[
