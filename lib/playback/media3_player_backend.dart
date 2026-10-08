@@ -1223,7 +1223,14 @@ class Media3PlayerBackend extends PlayerBackend {
       // HDR10 and the HDR10+ gate has nothing left to protect here.
       rendersAv1DoviViaHdr10BaseLayer: true,
       supportsVc1: PlatformDetection.supportsVc1,
-      supportsMpeg4: PlatformDetection.supportsMpeg4,
+      // Legacy MPEG-4 Part 2 (XviD/DivX), especially in AVI, is not
+      // reliably decoded by Media3/MediaCodec on Fire TV devices. Advertising
+      // it as direct-play capable makes Jellyfin return the original stream and
+      // playback then fails locally. Force the server fallback so these files
+      // are transcoded (normally to H.264). The normal max-bitrate and
+      // max-resolution preferences still apply, so this does not impose a
+      // quality downgrade or resolution cap.
+      supportsMpeg4: false,
       maxResolutionAvcWidth: PlatformDetection.maxResolutionAvcWidth,
       maxResolutionAvcHeight: PlatformDetection.maxResolutionAvcHeight,
       maxResolutionHevcWidth: PlatformDetection.maxResolutionHevcWidth,
