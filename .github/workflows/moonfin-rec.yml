@@ -32,7 +32,7 @@ jobs:
         run: |
           (cd packages/server_jellyfin && flutter pub get && flutter test test/jellyfin_live_tv_api_test.dart)
           (cd packages/server_emby && flutter pub get && flutter test test/emby_live_tv_api_test.dart)
-      - name: Set up signing
+      - name: Set up persistent release signing
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           STORE_TYPE: ${{ secrets.ANDROID_KEYSTORE_TYPE }}
@@ -40,9 +40,9 @@ jobs:
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
-            echo "No Android keystore secret; using existing debug signing behavior."
-            exit 0
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$STORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "::error::Persistent Moonfin REC signing secrets are not configured."
+            exit 1
           fi
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
           cat > android/keystore.properties <<EOF
