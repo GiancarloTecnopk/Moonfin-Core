@@ -1957,13 +1957,10 @@ class _LibraryHeader extends StatelessWidget {
     final isCompactLandscape = isMobile && isLandscape;
     final isCompactPortrait = isMobile && !isLandscape;
     final prefs = GetIt.instance<UserPreferences>();
-    final showAlpha =
-        !isSongsBrowse &&
-        prefs.get(UserPreferences.showAlphabeticalFilters) &&
-        (isMusicBrowse ||
-            sortBy == LibrarySortBy.name ||
-            sortBy == LibrarySortBy.albumArtist ||
-            sortBy == LibrarySortBy.album);
+    // Moonfin REC uses a single continuous library grid, Emby-style.
+    // Alphabet buckets/jump controls are intentionally disabled so browsing
+    // never breaks into letter-based navigation.
+    const showAlpha = false;
     final showInlineAlpha = showAlpha && (!isMobile || isCompactLandscape);
     final showBelowAlpha = showAlpha && isCompactPortrait;
     final topPad = (isMobile ? MediaQuery.of(context).padding.top : 0.0) + 8.0;
@@ -2638,20 +2635,6 @@ class _FilterSortDialogState extends State<_FilterSortDialog> {
                   color: onSurface,
                 ),
               ),
-            ),
-            _DialogCheckboxTile(
-              label: l10n.showAlphabeticalFilters,
-              checked: GetIt.instance<UserPreferences>().get(
-                UserPreferences.showAlphabeticalFilters,
-              ),
-              onTap: () {
-                final prefs = GetIt.instance<UserPreferences>();
-                final val = prefs.get(UserPreferences.showAlphabeticalFilters);
-                prefs.set(UserPreferences.showAlphabeticalFilters, !val);
-                setState(() {});
-              },
-              accent: accent,
-              onSurface: onSurface,
             ),
             ...section(
               key: 'sort',
