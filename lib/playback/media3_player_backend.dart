@@ -1231,6 +1231,9 @@ class Media3PlayerBackend extends PlayerBackend {
       // max-resolution preferences still apply, so this does not impose a
       // quality downgrade or resolution cap.
       supportsMpeg4: false,
+      // Prefer fragmented MP4 HLS for transcodes. MPEG-TS HLS with short
+      // segments can produce a visible cadence/stutter on Fire TV Media3.
+      preferFmp4Hls: true,
       maxResolutionAvcWidth: PlatformDetection.maxResolutionAvcWidth,
       maxResolutionAvcHeight: PlatformDetection.maxResolutionAvcHeight,
       maxResolutionHevcWidth: PlatformDetection.maxResolutionHevcWidth,
