@@ -159,6 +159,11 @@ class DeviceProfileBuilder {
     // picture with working audio. Servers without fMP4 HLS fall through to
     // the TS profile and encode H264, which renders.
     bool hevcRequiresFmp4Hls = false,
+    // Media3 handles fragmented MP4 HLS more smoothly than MPEG-TS on some
+    // Android TV / Fire TV devices, especially for server-transcoded legacy
+    // MPEG-4 Part 2 sources. Keep the default false so other backends retain
+    // their established TS-first behavior.
+    bool preferFmp4Hls = false,
     // Keeps DTS and MP2 out of both HLS transcode offers, since AVFoundation
     // decodes neither. The server copies a source track straight through
     // whenever its codec is on the offer, so leaving them there hands back a
@@ -413,9 +418,9 @@ class DeviceProfileBuilder {
       transcodingProfiles = <Map<String, dynamic>>[
         // The server takes the first profile it can satisfy, so the order
         // decides the container.
-        if (hevcRequiresFmp4Hls) fmp4VideoProfile,
+        if (hevcRequiresFmp4Hls || preferFmp4Hls) fmp4VideoProfile,
         tsVideoProfile,
-        if (!hevcRequiresFmp4Hls) fmp4VideoProfile,
+        if (!hevcRequiresFmp4Hls && !preferFmp4Hls) fmp4VideoProfile,
         <String, dynamic>{
           'Type': 'Audio',
           'Context': 'Streaming',
