@@ -43,21 +43,28 @@ List<AggregatedItem> buildMoonfinRecMyMediaItems({
       .where((lib) => !isRecordingLibrary(lib))
       .toList(growable: false);
 
-  final movies = usable
+  int byName(AggregatedLibrary a, AggregatedLibrary b) =>
+      a.name.toLowerCase().compareTo(b.name.toLowerCase());
+
+  final movieLibraries = usable
       .where((lib) => lib.collectionType.trim().toLowerCase() == 'movies')
-      .map(fromLibrary)
-      .toList(growable: false);
-  final series = usable
+      .toList()
+    ..sort(byName);
+  final seriesLibraries = usable
       .where((lib) => lib.collectionType.trim().toLowerCase() == 'tvshows')
-      .map(fromLibrary)
-      .toList(growable: false);
-  final others = usable
+      .toList()
+    ..sort(byName);
+  final otherLibraries = usable
       .where((lib) {
         final type = lib.collectionType.trim().toLowerCase();
         return type != 'movies' && type != 'tvshows';
       })
-      .map(fromLibrary)
-      .toList(growable: false);
+      .toList()
+    ..sort(byName);
+
+  final movies = movieLibraries.map(fromLibrary).toList(growable: false);
+  final series = seriesLibraries.map(fromLibrary).toList(growable: false);
+  final others = otherLibraries.map(fromLibrary).toList(growable: false);
 
   final items = <AggregatedItem>[];
 
