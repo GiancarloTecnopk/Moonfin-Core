@@ -1372,6 +1372,48 @@ class HomeViewModel extends ChangeNotifier {
                 ),
         ];
       case HomeSectionType.libraryButtons:
+        if (PlatformDetection.isAndroid &&
+            PlatformDetection.isTV &&
+            GetIt.instance.isRegistered<UserViewsRepository>()) {
+          try {
+            final viewsRepo = GetIt.instance<UserViewsRepository>();
+            var libraries = await viewsRepo.getUserViews();
+            if (libraries.isEmpty) {
+              libraries = await viewsRepo.getAllViewsIncludingHidden();
+            }
+            if (libraries.isNotEmpty) {
+              return [
+                HomeRow(
+                  id: 'libraryTilesSmall',
+                  title: l10n.myMedia,
+                  rowType: HomeRowType.libraryTilesSmall,
+                  items: [
+                    for (final lib in libraries)
+                      AggregatedItem(
+                        id: lib.id,
+                        serverId: lib.serverId,
+                        rawData: {
+                          'Id': lib.id,
+                          'Name': lib.name,
+                          'CollectionType': lib.collectionType,
+                          'Type': 'CollectionFolder',
+                          if (lib.primaryImageAspectRatio != null)
+                            'PrimaryImageAspectRatio':
+                                lib.primaryImageAspectRatio,
+                          if (lib.imageTags != null)
+                            'ImageTags': lib.imageTags,
+                          if (lib.backdropImageTags != null)
+                            'BackdropImageTags': lib.backdropImageTags,
+                        },
+                      ),
+                  ],
+                ),
+              ];
+            }
+          } catch (e) {
+            debugPrint('[Home] Android TV My Media direct views failed: $e');
+          }
+        }
         return [
           _multiServerEnabled
               ? await _multiServerRepo.getAggregatedLibraryTiles(
