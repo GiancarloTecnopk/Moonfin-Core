@@ -962,11 +962,24 @@ class _TopToolbarState extends State<TopToolbar> with RouteAware {
     // Checked alongside the show* preferences, never written into them, since
     // those sync and would follow the account to the parent's other devices.
     final kidsMode = _kidsMode;
-    final showLiveTv = _showLiveTvButton;
-    final navLibraries = _navLibraries;
+    final forceTvNavigation =
+        PlatformDetection.isAndroid && PlatformDetection.isTV && !kidsMode;
+    final showLiveTv = forceTvNavigation
+        ? _libraries.any(isLiveTvLibrary)
+        : _showLiveTvButton;
+    final navLibraries = librariesForNav(
+      _libraries,
+      showLiveTv,
+      hideLiveTv: kidsMode,
+    );
     final showLibraries =
-        !kidsMode && _prefs.get(UserPreferences.showLibrariesInToolbar);
-    final alwaysExpanded = _prefs.get(UserPreferences.navbarAlwaysExpanded);
+        !kidsMode &&
+        (forceTvNavigation ||
+            _prefs.get(UserPreferences.showLibrariesInToolbar));
+    // Moonfin REC is primarily a TV client: keep the top navigation readable
+    // after a fresh install instead of collapsing it to bare icons.
+    final alwaysExpanded =
+        forceTvNavigation || _prefs.get(UserPreferences.navbarAlwaysExpanded);
     final showFolders = _prefs.get(UserPreferences.enableFolderView);
     final showSyncPlay =
         !kidsMode &&
@@ -1472,7 +1485,7 @@ class _AndroidTvExpandableLibrariesButton extends StatefulWidget {
 
 class _AndroidTvExpandableLibrariesButtonState
     extends State<_AndroidTvExpandableLibrariesButton> {
-  bool _expanded = false;
+  late bool _expanded;
   final FocusNode _ownedTriggerFocusNode = FocusNode(
     debugLabel: 'TopToolbarLibrariesTriggerInline',
   );
@@ -1485,6 +1498,7 @@ class _AndroidTvExpandableLibrariesButtonState
   @override
   void initState() {
     super.initState();
+    _expanded = widget.alwaysExpanded;
     _syncLibraryFocusNodes();
   }
 
@@ -1493,6 +1507,9 @@ class _AndroidTvExpandableLibrariesButtonState
     covariant _AndroidTvExpandableLibrariesButton oldWidget,
   ) {
     super.didUpdateWidget(oldWidget);
+    if (widget.alwaysExpanded && !_expanded) {
+      _expanded = true;
+    }
     _syncLibraryFocusNodes();
   }
 
@@ -1547,7 +1564,7 @@ class _AndroidTvExpandableLibrariesButtonState
 
   void _moveFocusToNextAfterLibraries() {
     if (!mounted) return;
-    if (_expanded) {
+    if (_expanded && !widget.alwaysExpanded) {
       setState(() => _expanded = false);
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1570,7 +1587,10 @@ class _AndroidTvExpandableLibrariesButtonState
       canRequestFocus: false,
       skipTraversal: true,
       onFocusChange: (hasFocus) {
-        if (!hasFocus && _expanded && mounted) {
+        if (!hasFocus &&
+            _expanded &&
+            !widget.alwaysExpanded &&
+            mounted) {
           setState(() => _expanded = false);
         }
       },
@@ -1589,7 +1609,7 @@ class _AndroidTvExpandableLibrariesButtonState
               _focusLibraryAt(0);
             },
             onPressed: () {
-              if (!mounted) return;
+              if (!mounted || widget.alwaysExpanded) return;
               setState(() => _expanded = !_expanded);
             },
           ),
