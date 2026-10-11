@@ -78,6 +78,7 @@ import '../../widgets/fullscreen_backdrop_switcher.dart';
 import '../../navigation/route_lifecycle_observer.dart';
 import '../../util/home_row_title_localizer.dart';
 import '../../../util/game_library.dart';
+import '../../../util/moonfin_rec_home_shortcuts.dart';
 import 'home_row_prefetch.dart';
 import 'home_row_shift.dart';
 import 'home_view_model.dart';
@@ -5552,6 +5553,7 @@ class _ContentRowsState extends State<_ContentRows>
       'photos' => Icons.photo,
       'homevideos' => Icons.videocam,
       'livetv' => Icons.live_tv,
+      'recordings' => Icons.fiber_manual_record_rounded,
       'playlists' => Icons.playlist_play,
       'boxsets' => Icons.collections_bookmark,
       _ => Icons.folder_rounded,
@@ -5636,14 +5638,27 @@ class _ContentRowsState extends State<_ContentRows>
   }
 
   static void _navigateToLibrary(BuildContext context, AggregatedItem item) {
+    final moonfinRecDestination =
+        item.rawData[moonfinRecDestinationKey]?.toString();
+    if (moonfinRecDestination == moonfinRecLiveTvDestination) {
+      context.push(Destinations.liveTvGuide);
+      return;
+    }
+    if (moonfinRecDestination == moonfinRecRecordingsDestination) {
+      context.push(Destinations.liveTvRecordings);
+      return;
+    }
+
     // Game libraries route to the EmulatorJS browser, everything else by its
     // collection type. Shared with the sidebar, toolbar and bottom nav.
-    context.push(libraryRoute(
-      item.id,
-      item.rawData['CollectionType'] as String?,
-      item.name,
-      serverId: item.serverId,
-    ));
+    context.push(
+      libraryRoute(
+        item.id,
+        item.rawData['CollectionType'] as String?,
+        item.name,
+        serverId: item.serverId,
+      ),
+    );
   }
 
   static String? _resolveImageUrl(
