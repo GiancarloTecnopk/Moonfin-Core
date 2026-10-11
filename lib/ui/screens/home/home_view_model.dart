@@ -685,14 +685,20 @@ class HomeViewModel extends ChangeNotifier {
       } catch (_) {}
     }
 
-    var includeLiveTv = libraries.any(
-      (lib) => lib.collectionType.trim().toLowerCase() == 'livetv',
-    );
-    if (!includeLiveTv) {
+    // Last compatibility path: query this active Jellyfin client directly.
+    // This bypasses both synchronized Home preferences and multi-server view
+    // aggregation, so a Jellyfin API compatibility issue cannot erase the
+    // launch row while the libraries themselves are still reachable.
+    if (libraries.isEmpty) {
       try {
-        includeLiveTv = await _dataSource.hasLiveTvChannels();
+        libraries = await loadUserViews(_client, includeHidden: true);
       } catch (_) {}
     }
+
+    // Moonfin REC is the recording build: on Android TV its two Live TV
+    // launchers are part of the fixed navigation contract. The server still
+    // decides whether opening them yields content.
+    const includeLiveTv = true;
 
     final l10n = currentAppLocalizations();
     final items = buildMoonfinRecMyMediaItems(
