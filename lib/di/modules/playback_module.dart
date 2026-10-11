@@ -31,6 +31,7 @@ import '../../playback/auto_bitrate_service.dart';
 import '../../playback/aether_backend.dart';
 import '../../playback/media_kit_player_backend.dart';
 import '../../playback/media3_player_backend.dart';
+import '../../playback/moonfin_rec_high10.dart';
 import '../../playback/offline_stream_resolver.dart';
 import '../../playback/playback_profile_diagnostics.dart';
 import '../../playback/sleep_timer_controller.dart';
@@ -323,6 +324,7 @@ void registerPlaybackModule() {
   final prefs = _getIt<UserPreferences>();
 
   MediaKitPlayerBackend? backend;
+  MediaKitPlayerBackend? high10SoftwareBackend;
   Media3PlayerBackend? media3Backend;
   AppleTvBackend? appleTvBackend;
   AetherBackend? iosBackend;
@@ -339,6 +341,23 @@ void registerPlaybackModule() {
   } else {
     backend = MediaKitPlayerBackend(prefs);
     _getIt.registerSingleton<MediaKitPlayerBackend>(backend);
+
+    // Fire TV hardware does not decode AVC High10. Keep the ordinary backend
+    // untouched and create one software-only libmpv path for those files.
+    // It uses a Flutter texture, not the Android native SurfaceView, because
+    // the latter is tied to the MediaCodec/hardware output path.
+    if (PlatformDetection.isAndroid && PlatformDetection.isTV) {
+      high10SoftwareBackend = MediaKitPlayerBackend(
+        prefs,
+        forceTextureSurface: true,
+        forceSoftwareDecode: true,
+      );
+      _getIt.registerSingleton<MediaKitPlayerBackend>(
+        high10SoftwareBackend,
+        instanceName: 'moonfinRecHigh10',
+      );
+    }
+
     // The constructor subscribes to moonfin/media3_video_events, which only
     // Android implements, so building this anywhere else raises on its own.
     if (PlatformDetection.isAndroid) {
@@ -475,12 +494,24 @@ void registerPlaybackModule() {
       final preferMedia3 =
           prefs.get(UserPreferences.playbackEnginePreference) ==
           PlaybackEnginePreference.media3;
+
+      if (PlatformDetection.isTV &&
+          moonfinRecResolutionNeedsSoftwareAvcHigh10(resolution)) {
+        final high10 = _getIt<MediaKitPlayerBackend>(
+          instanceName: 'moonfinRecHigh10',
+        );
+        if (identical(currentBackend, high10)) return currentBackend;
+        return high10;
+      }
+
       if (preferMedia3) {
         if (currentBackend is Media3PlayerBackend) return currentBackend;
         return _getIt<Media3PlayerBackend>();
       }
-      if (currentBackend is MediaKitPlayerBackend) return currentBackend;
-      return _getIt<MediaKitPlayerBackend>();
+
+      final normalMediaKit = _getIt<MediaKitPlayerBackend>();
+      if (identical(currentBackend, normalMediaKit)) return currentBackend;
+      return normalMediaKit;
     }
 
     if (currentBackend is MediaKitPlayerBackend) return currentBackend;
@@ -795,10 +826,62 @@ void setActiveStreamResolver(MediaServerClient client) {
   _currentActiveResolverClient = client;
 }
 
+Future<bool> _moonfinRecNeedsHigh10BeforeResolve(
+  AggregatedItem item,
+  MediaServerClient client,
+) async {
+  if (moonfinRecItemNeedsSoftwareAvcHigh10(item)) return true;
+
+  // Home, Next Up and Continue Watching intentionally carry lean item DTOs.
+  // Fetch full playback metadata before Jellyfin sees the device profile;
+  // deciding after resolve is too late because the server may already have
+  // committed to a lossy 10-bit -> 8-bit transcode.
+  try {
+    final full = await client.itemsApi.getItem(
+      item.id,
+      fields: 'MediaSources,MediaStreams',
+    );
+    final hydrated = AggregatedItem(
+      id: item.id,
+      serverId: item.serverId,
+      rawData: full,
+    );
+    return moonfinRecItemNeedsSoftwareAvcHigh10(hydrated);
+  } catch (_) {
+    return false;
+  }
+}
+
 Future<void> _ensureResolverForItem(dynamic item) async {
   if (item is! AggregatedItem) return;
-  final factory = _getIt<MediaServerClientFactory>();
-  final client = factory.getClientIfExists(item.serverId);
+  final client = _resolveClientForServerId(item.serverId);
   if (client == null) return;
   setActiveStreamResolver(client);
+
+  if (!(PlatformDetection.isAndroid && PlatformDetection.isTV)) return;
+
+  final prefs = _getIt<UserPreferences>();
+  final preferMedia3 =
+      prefs.get(UserPreferences.playbackEnginePreference) ==
+      PlaybackEnginePreference.media3;
+  final needsHigh10 = await _moonfinRecNeedsHigh10BeforeResolve(item, client);
+  final manager = _getIt<PlaybackManager>();
+
+  final PlayerBackend target = needsHigh10
+      ? _getIt<MediaKitPlayerBackend>(instanceName: 'moonfinRecHigh10')
+      : preferMedia3
+      ? _getIt<Media3PlayerBackend>()
+      : _getIt<MediaKitPlayerBackend>();
+
+  _getIt<LogService>().log(
+    LogCategory.playback,
+    'Moonfin REC pre-resolve: item=${item.id}, '
+    'high10=$needsHigh10, backend=${target.runtimeType}, '
+    'textureSoftware=${target is MediaKitPlayerBackend && target.softwareVideoDecode}',
+    level: LogLevel.debug,
+  );
+
+  if (!identical(manager.backend, target)) {
+    manager.setBackend(target, disposePrevious: false);
+  }
 }
