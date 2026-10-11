@@ -1005,10 +1005,10 @@ class _TopToolbarState extends State<TopToolbar> with RouteAware {
         !kidsMode &&
         (forceTvNavigation ||
             _prefs.get(UserPreferences.showLibrariesInToolbar));
-    // Moonfin REC is primarily a TV client: keep the top navigation readable
-    // after a fresh install instead of collapsing it to bare icons.
+    // Respect the user's normal label-expansion preference. Android TV must
+    // not use this flag to keep the Libraries sub-list permanently open.
     final alwaysExpanded =
-        forceTvNavigation || _prefs.get(UserPreferences.navbarAlwaysExpanded);
+        _prefs.get(UserPreferences.navbarAlwaysExpanded);
     final showFolders = _prefs.get(UserPreferences.enableFolderView);
     final showSyncPlay =
         !kidsMode &&
@@ -1024,11 +1024,11 @@ class _TopToolbarState extends State<TopToolbar> with RouteAware {
     // Desktop/macOS keeps the dropdown; inline fan-out is only used where
     // horizontal scroll is natural (TV d-pad or touch).
     final useInlineLibraries =
+        !(PlatformDetection.isAndroid && PlatformDetection.isTV) &&
         _prefs.get(UserPreferences.navbarPosition) == NavbarPosition.top &&
         ((alwaysExpanded &&
                 (PlatformDetection.isTV || PlatformDetection.useMobileUi)) ||
-            ((PlatformDetection.isAndroid || PlatformDetection.isAppleTV) &&
-                PlatformDetection.isTV));
+            (PlatformDetection.isAppleTV && PlatformDetection.isTV));
 
     int order = 1;
     var navSlot = 0;
