@@ -245,7 +245,14 @@ class _NavigationLayoutState extends State<NavigationLayout> with WidgetsBinding
   }
 
   Widget _buildToolbar() {
-    final translateWithScroll = PlatformDetection.isTV && !widget.pinTopToolbar;
+    // Moonfin REC on Android TV is operated primarily with the d-pad. Keep the
+    // navigation bar permanently visible: translating it away with the home
+    // vertical scroll made Libraries and Live TV appear to be missing even
+    // though the buttons were present in TopToolbar.
+    final keepTvToolbarPinned =
+        PlatformDetection.isAndroid && PlatformDetection.isTV;
+    final translateWithScroll =
+        PlatformDetection.isTV && !widget.pinTopToolbar && !keepTvToolbarPinned;
     final content = _content;
     final toolbar = ValueListenableBuilder<bool>(
       valueListenable: NavigationLayout.trailerImmersiveNotifier,
