@@ -2793,11 +2793,36 @@ class UserPreferences extends ChangeNotifier {
   List<HomeSectionConfig> get activeHomeSectionConfigs {
     final enabled = homeSectionsConfig.where((c) => c.enabled).toList()
       ..sort((a, b) => a.order.compareTo(b.order));
-    return _forKidsMode(
-      enabled
-          .where((c) => c.isPluginDynamic || c.type != HomeSectionType.none)
-          .toList(),
-    );
+
+    final visible = enabled
+        .where((c) => c.isPluginDynamic || c.type != HomeSectionType.none)
+        .toList();
+
+    // Moonfin REC on Android TV keeps the classic "I Miei Media" launcher
+    // available regardless of a synced/newer home-layout preference. This is
+    // the large quick-access row used on the Fire TV client for Live TV,
+    // Movies, 4K, Recordings and Series.
+    if (PlatformDetection.isAndroid &&
+        PlatformDetection.isTV &&
+        !visible.any(
+          (c) =>
+              c.isBuiltin &&
+              c.type == HomeSectionType.libraryTilesSmall,
+        )) {
+      final firstOrder = visible.isEmpty
+          ? 0
+          : visible.map((c) => c.order).reduce((a, b) => a < b ? a : b);
+      visible.insert(
+        0,
+        HomeSectionConfig(
+          type: HomeSectionType.libraryTilesSmall,
+          enabled: true,
+          order: firstOrder - 1,
+        ),
+      );
+    }
+
+    return _forKidsMode(visible);
   }
 
   /// The only rows Kids Mode leaves standing: the way into the libraries, what
