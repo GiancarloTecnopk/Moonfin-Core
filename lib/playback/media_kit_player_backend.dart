@@ -181,6 +181,8 @@ class MediaKitPlayerBackend extends PlayerBackend {
   final UserPreferences _prefs;
   final Future<void> Function(int handle)? _onNativeHandleReady;
   final bool _hwDecodingEnabled;
+  final bool _usesNativeVideoSurface;
+  final bool _softwareVideoDecode;
 
   /// Owns the decision about native HDR output and the window it needs.
   /// Public so the playback info sheet can report what actually happened.
@@ -421,6 +423,8 @@ class MediaKitPlayerBackend extends PlayerBackend {
     this._prefs,
     this._onNativeHandleReady,
     this._hwDecodingEnabled,
+    this._usesNativeVideoSurface,
+    this._softwareVideoDecode,
   ) {
     _letterboxCropper = MpvLetterboxCropper(
       _MediaKitLetterboxHost(this),
@@ -436,8 +440,13 @@ class MediaKitPlayerBackend extends PlayerBackend {
   factory MediaKitPlayerBackend(
     UserPreferences prefs, {
     Future<void> Function(int handle)? onNativeHandleReady,
+    bool forceTextureSurface = false,
+    bool forceSoftwareDecode = false,
   }) {
-    final hwDecodingEnabled = prefs.get(UserPreferences.hardwareDecoding);
+    final usesNativeVideoSurface =
+        _useNativeSurface && !forceTextureSurface;
+    final hwDecodingEnabled =
+        !forceSoftwareDecode && prefs.get(UserPreferences.hardwareDecoding);
     final String? hwdec = hwDecodingEnabled
         ? (PlatformDetection.isAndroid && PlatformDetection.isTV
               ? 'auto-copy'
@@ -503,7 +512,7 @@ class MediaKitPlayerBackend extends PlayerBackend {
         _nativeSetProperty(platform, 'tone-mapping', 'auto');
       }
 
-      if (_useNativeSurface) {
+      if (usesNativeVideoSurface) {
         _nativeSetProperty(platform, 'vo', 'null');
         _nativeSetProperty(
           platform,
@@ -521,7 +530,7 @@ class MediaKitPlayerBackend extends PlayerBackend {
     }
 
     VideoController? controller;
-    if (_useNativeSurface) {
+    if (usesNativeVideoSurface) {
       player.platform?.isVideoControllerAttached = true;
       if (!(player.platform?.videoControllerCompleter.isCompleted ?? true)) {
         player.platform?.videoControllerCompleter.complete();
@@ -532,6 +541,7 @@ class MediaKitPlayerBackend extends PlayerBackend {
         configuration: VideoControllerConfiguration(
           hwdec: hwdec,
           enableHardwareAcceleration:
+              !forceSoftwareDecode &&
               !(PlatformDetection.isIOS &&
                   PlatformDetection.iosMajorVersion >= 26),
         ),
@@ -544,6 +554,8 @@ class MediaKitPlayerBackend extends PlayerBackend {
       prefs,
       onNativeHandleReady,
       hwDecodingEnabled,
+      usesNativeVideoSurface,
+      forceSoftwareDecode,
     );
   }
 
@@ -568,6 +580,15 @@ class MediaKitPlayerBackend extends PlayerBackend {
   Player get player => _player;
 
   VideoController? get videoController => _videoController;
+
+  /// Whether this backend instance expects the Android TV native SurfaceView.
+  /// High10 software decode deliberately returns false so Flutter renders the
+  /// libmpv texture instead of routing decoded frames through MediaCodec.
+  bool get usesNativeVideoSurface => _usesNativeVideoSurface;
+
+  bool get hardwareDecodingEnabled => _hwDecodingEnabled;
+
+  bool get softwareVideoDecode => _softwareVideoDecode;
 
   @override
   Map<String, dynamic> getDeviceProfile({
@@ -611,10 +632,17 @@ class MediaKitPlayerBackend extends PlayerBackend {
       pgsDirectPlay:
           _prefs.get(UserPreferences.pgsDirectPlay) && canRenderBitmapSubtitles,
       assDirectPlay: _prefs.get(UserPreferences.assDirectPlay),
-      supportsAvc: capabilities.supportsAvc,
-      supportsAvcHigh10: capabilities.supportsAvcHigh10,
-      avcMainLevel: capabilities.avcMainLevel,
-      avcHigh10Level: capabilities.avcHigh10Level,
+      supportsAvc: capabilities.supportsAvc || _softwareVideoDecode,
+      supportsAvcHigh10:
+          capabilities.supportsAvcHigh10 || _softwareVideoDecode,
+      avcMainLevel:
+          _softwareVideoDecode && capabilities.avcMainLevel == 0
+          ? 52
+          : capabilities.avcMainLevel,
+      avcHigh10Level:
+          _softwareVideoDecode
+          ? 52
+          : capabilities.avcHigh10Level,
       supportsHevc: capabilities.supportsHevc,
       supportsHevcMain10: capabilities.supportsHevcMain10,
       transcodeHevcAllowed: serverAllowsHevcTranscode(),
