@@ -47,7 +47,7 @@ void main() {
 
     expect(
       items.map((item) => item.name).toList(),
-      ['Diretta TV', 'Film4K', 'Film', 'Recordings', 'Serie TV'],
+      ['Diretta TV', 'Film', 'Film4K', 'Recordings', 'Serie TV'],
     );
     expect(
       items.first.rawData[moonfinRecDestinationKey],
