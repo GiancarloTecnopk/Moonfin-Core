@@ -999,9 +999,45 @@ class RowDataSource {
     String serverId, [
     HomeRowType rowType = HomeRowType.libraryTiles,
   ]) async {
-    var response = GetIt.instance.isRegistered<UserViewsRepository>()
-        ? await GetIt.instance<UserViewsRepository>().getVisibleViewsResponse()
-        : await loadVisibleUserViews(_client);
+    Map<String, dynamic> response;
+    try {
+      response = GetIt.instance.isRegistered<UserViewsRepository>()
+          ? await GetIt.instance<UserViewsRepository>().getVisibleViewsResponse()
+          : await loadVisibleUserViews(_client);
+    } catch (_) {
+      response = const <String, dynamic>{'Items': <dynamic>[]};
+    }
+
+    // Jellyfin 12.2 can intermittently return an empty/partial visible-views
+    // response while the same user's full view list is available. On Android
+    // TV, the My Media row is the user's primary quick launcher, so recover
+    // from that condition instead of rendering an empty row.
+    if (PlatformDetection.isAndroid &&
+        PlatformDetection.isTV &&
+        _rawItems(response).isEmpty &&
+        GetIt.instance.isRegistered<UserViewsRepository>()) {
+      try {
+        final views = await GetIt.instance<UserViewsRepository>()
+            .getAllViewsIncludingHidden();
+        response = {
+          'Items': [
+            for (final lib in views)
+              {
+                'Id': lib.id,
+                'Name': lib.name,
+                'CollectionType': lib.collectionType,
+                'ServerId': lib.serverId,
+                if (lib.primaryImageAspectRatio != null)
+                  'PrimaryImageAspectRatio': lib.primaryImageAspectRatio,
+                if (lib.imageTags != null) 'ImageTags': lib.imageTags,
+                if (lib.backdropImageTags != null)
+                  'BackdropImageTags': lib.backdropImageTags,
+              },
+          ],
+          'TotalRecordCount': views.length,
+        };
+      } catch (_) {}
+    }
 
     // Kids Mode routes Live TV back to home, so leaving its tile here would
     // just be a dead end.
