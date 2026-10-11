@@ -173,6 +173,35 @@ bool _itemNeedsSoftwareAvcHigh10(AggregatedItem item) {
   return false;
 }
 
+bool _resolutionNeedsSoftwareAvcHigh10(StreamResolutionResult resolution) =>
+    resolution.mediaStreams.any(_isAvcHigh10Stream);
+
+Future<bool> _needsSoftwareAvcHigh10BeforeResolve(
+  AggregatedItem item,
+  MediaServerClient client,
+) async {
+  // Home/Next Up rows are intentionally lean and often omit MediaStreams.
+  // Looking only at the queue item misses High10 and sends Jellyfin Media3's
+  // hardware profile, which has already triggered 10->8 bit transcoding by the
+  // time the resolved stream comes back.
+  if (_itemNeedsSoftwareAvcHigh10(item)) return true;
+
+  try {
+    final full = await client.itemsApi.getItem(
+      item.id,
+      fields: 'MediaSources,MediaStreams',
+    );
+    final hydrated = AggregatedItem(
+      id: item.id,
+      serverId: item.serverId,
+      rawData: full,
+    );
+    return _itemNeedsSoftwareAvcHigh10(hydrated);
+  } catch (_) {
+    return false;
+  }
+}
+
 bool _isEpisodeQueueItem(AggregatedItem item) {
   final type = item.type?.trim().toLowerCase();
   return type == 'episode';
@@ -515,8 +544,9 @@ void registerPlaybackModule() {
       final currentItem = manager.queueService.currentItem;
       final needsSoftwareHigh10 =
           PlatformDetection.isTV &&
-          currentItem is AggregatedItem &&
-          _itemNeedsSoftwareAvcHigh10(currentItem);
+          ((currentItem is AggregatedItem &&
+                  _itemNeedsSoftwareAvcHigh10(currentItem)) ||
+              _resolutionNeedsSoftwareAvcHigh10(resolution));
       if (preferMedia3 && needsSoftwareHigh10) {
         if (currentBackend is MediaKitPlayerBackend) return currentBackend;
         return _getIt<MediaKitPlayerBackend>();
@@ -862,9 +892,19 @@ Future<void> _ensureResolverForItem(dynamic item) async {
         PlaybackEnginePreference.media3;
     if (preferMedia3) {
       final manager = _getIt<PlaybackManager>();
-      final target = _itemNeedsSoftwareAvcHigh10(item)
+      final needsSoftwareHigh10 =
+          await _needsSoftwareAvcHigh10BeforeResolve(item, client);
+      final target = needsSoftwareHigh10
           ? _getIt<MediaKitPlayerBackend>()
           : _getIt<Media3PlayerBackend>();
+
+      _getIt<LogService>().log(
+        LogCategory.playback,
+        'Android TV pre-resolve backend: item ${item.id}, '
+        'High10=$needsSoftwareHigh10, target=${target.runtimeType}',
+        level: LogLevel.debug,
+      );
+
       if (!identical(manager.backend, target)) {
         manager.setBackend(target, disposePrevious: false);
       }
