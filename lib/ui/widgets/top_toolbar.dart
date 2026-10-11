@@ -333,23 +333,50 @@ class _TopToolbarState extends State<TopToolbar> with RouteAware {
       final useMultiServer = _prefs.get(
         UserPreferences.enableMultiServerLibraries,
       );
-      final libs = useMultiServer
+      var libs = useMultiServer
           ? await GetIt.instance<MultiServerRepository>()
                 .getAggregatedLibraries()
           : await _viewsRepo.getUserViews();
 
+      // Jellyfin 12.2 can return an empty/partial navigation view set while
+      // normal library content is still available (the Home screen continues
+      // to populate). On Android TV fall back to the unfiltered user views so
+      // the navigation chrome never loses the user's media libraries.
+      if (PlatformDetection.isAndroid &&
+          PlatformDetection.isTV &&
+          libs.isEmpty) {
+        libs = await _viewsRepo.getAllViewsIncludingHidden();
+      }
+
       unawaited(GetIt.instance<GameLibraryRegistry>().refresh());
 
-      final filtered = useMultiServer
+      final filtered = useMultiServer && libs.isNotEmpty
           ? await GetIt.instance<LibraryScopeService>().withoutHiddenLibraries(
               libs,
             )
           : libs;
 
-      if (mounted && !_librariesEqual(_libraries, filtered)) {
-        setState(() => _libraries = filtered);
+      final usable = filtered
+          .where((lib) => lib.id.isNotEmpty && lib.name.isNotEmpty)
+          .toList(growable: false);
+
+      if (mounted && !_librariesEqual(_libraries, usable)) {
+        setState(() => _libraries = usable);
       }
-    } catch (_) {}
+    } catch (_) {
+      // Last-resort Android TV fallback. Do not leave the top/side navigation
+      // empty just because the visibility/configuration call failed.
+      if (PlatformDetection.isAndroid && PlatformDetection.isTV) {
+        try {
+          final fallback = (await _viewsRepo.getAllViewsIncludingHidden())
+              .where((lib) => lib.id.isNotEmpty && lib.name.isNotEmpty)
+              .toList(growable: false);
+          if (mounted && !_librariesEqual(_libraries, fallback)) {
+            setState(() => _libraries = fallback);
+          }
+        } catch (_) {}
+      }
+    }
   }
 
   bool _librariesEqual(List<AggregatedLibrary> a, List<AggregatedLibrary> b) {
@@ -364,8 +391,10 @@ class _TopToolbarState extends State<TopToolbar> with RouteAware {
   // dead end.
   bool get _showLiveTvButton =>
       !_kidsMode &&
-      _prefs.get(UserPreferences.showLiveTvButton) &&
-      _libraries.any(isLiveTvLibrary);
+      ((PlatformDetection.isAndroid && PlatformDetection.isTV) ||
+          _prefs.get(UserPreferences.showLiveTvButton)) &&
+      ((PlatformDetection.isAndroid && PlatformDetection.isTV) ||
+          _libraries.any(isLiveTvLibrary));
 
   List<AggregatedLibrary> get _navLibraries =>
       librariesForNav(_libraries, _showLiveTvButton, hideLiveTv: _kidsMode);
