@@ -34,6 +34,7 @@ import '../../../data/services/seerr/seerr_api_models.dart';
 import '../../../data/utils/bounded_concurrency.dart';
 import '../../../util/platform_detection.dart';
 import '../../../util/server_url.dart';
+import '../../../util/moonfin_rec_home_shortcuts.dart';
 import '../../../preference/seerr_preferences.dart';
 import '../../../data/viewmodels/seerr_discover_view_model.dart';
 import '../../widgets/seerr/seerr_shortcuts.dart';
@@ -634,6 +635,8 @@ class HomeViewModel extends ChangeNotifier {
         (cfg) => loadConfigItem(cfg),
       );
 
+      await _ensureMoonfinRecMyMediaRow();
+
       unawaited(_cacheStore.write(_homeCacheKey(), _rows));
       _topShelf.update(_rows);
       _watchNext.update(_rows);
@@ -653,6 +656,75 @@ class HomeViewModel extends ChangeNotifier {
         _pendingReloadForceRefresh = false;
         await load(preserveExisting: nextPreserveExisting, forceRefresh: nextForceRefresh);
       }
+    }
+  }
+
+  Future<void> _ensureMoonfinRecMyMediaRow() async {
+    if (!(PlatformDetection.isAndroid && PlatformDetection.isTV)) return;
+    if (_prefs.get(UserPreferences.kidsModeEnabled)) return;
+
+    List<AggregatedLibrary> libraries = const <AggregatedLibrary>[];
+
+    try {
+      if (_multiServerEnabled) {
+        libraries = await _multiServerRepo.getAggregatedLibraries();
+      } else if (GetIt.instance.isRegistered<UserViewsRepository>()) {
+        libraries = await GetIt.instance<UserViewsRepository>().getUserViews();
+      }
+    } catch (_) {}
+
+    // Jellyfin 12.2 can transiently answer the visible-view request with an
+    // empty set. Use the full user view list only as a recovery path; the row
+    // must not disappear because a synchronized Home layout or one API call
+    // omitted My Media.
+    if (libraries.isEmpty &&
+        GetIt.instance.isRegistered<UserViewsRepository>()) {
+      try {
+        libraries = await GetIt.instance<UserViewsRepository>()
+            .getAllViewsIncludingHidden();
+      } catch (_) {}
+    }
+
+    var includeLiveTv = libraries.any(
+      (lib) => lib.collectionType.trim().toLowerCase() == 'livetv',
+    );
+    if (!includeLiveTv) {
+      try {
+        includeLiveTv = await _dataSource.hasLiveTvChannels();
+      } catch (_) {}
+    }
+
+    final l10n = currentAppLocalizations();
+    final items = buildMoonfinRecMyMediaItems(
+      libraries: libraries,
+      fallbackServerId: _serverId,
+      liveTvLabel: l10n.liveTv,
+      recordingsLabel: l10n.recordings,
+      includeLiveTv: includeLiveTv,
+    );
+
+    if (items.isEmpty) return;
+
+    final replacement = HomeRow(
+      id: moonfinRecMyMediaRowId,
+      title: l10n.myMedia,
+      rowType: HomeRowType.libraryTilesSmall,
+      items: items,
+      totalCount: items.length,
+    );
+
+    final updated = <HomeRow>[
+      replacement,
+      for (final row in _rows)
+        if (row.id != moonfinRecMyMediaRowId &&
+            row.rowType != HomeRowType.libraryTiles &&
+            row.rowType != HomeRowType.libraryTilesSmall)
+          row,
+    ];
+
+    if (!listEquals(_rows, updated)) {
+      _rows = updated;
+      notifyListeners();
     }
   }
 
