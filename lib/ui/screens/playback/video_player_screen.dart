@@ -154,6 +154,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     return backend is MediaKitPlayerBackend ? backend : null;
   }
 
+  bool get _activeUsesNativeVideoSurface =>
+      (_activeMediaKitBackend ?? _backend)?.usesNativeVideoSurface ?? false;
+
   /// The key table the handler and the shortcut list share. Only the
   /// defaults exist today. A user-editable table plugs in here.
   PlayerKeyBindings get _keyBindings => PlayerKeyBindings.defaults;
@@ -828,7 +831,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     _screensaverPlayingSub = _state.playingStream.listen(
       _screensaverController.setPlaybackActive,
     );
-    if (PlatformDetection.useNativeVideoSurface) {
+    if (_activeUsesNativeVideoSurface) {
       _subtitleActive = (_manager.subtitleStreamIndex ?? -1) >= 0;
     }
     _themeMusicService.setExternalAudioActive(true);
@@ -904,7 +907,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _showControls(focusSeekbar: true);
-      if (PlatformDetection.useNativeVideoSurface) {
+      if (_activeUsesNativeVideoSurface) {
         _syncSubtitleActive();
       }
       _showBringupFailureIfAny(_bringupState);
@@ -2426,7 +2429,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
 
   void _onPositionUpdate(Duration position) {
     if (!mounted || _isSeeking || _isRestoringPosition) return;
-    if (PlatformDetection.useNativeVideoSurface) {
+    if (_activeUsesNativeVideoSurface) {
       _syncSubtitleActive();
     }
     _refreshTrickplayIfNeeded();
@@ -4136,7 +4139,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   };
 
   void _syncSubtitleActive() {
-    if (!PlatformDetection.useNativeVideoSurface || !mounted) return;
+    if (!_activeUsesNativeVideoSurface || !mounted) return;
     final active = (_manager.subtitleStreamIndex ?? -1) >= 0;
     if (active != _subtitleActive) {
       setState(() {
@@ -4251,16 +4254,15 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         ),
       );
     }
-    final hwDecodingEnabled = _prefs.get(UserPreferences.hardwareDecoding);
     const selectedVo = 'gpu';
-    if (PlatformDetection.useNativeVideoSurface) {
+    if (mediaKitBackend.usesNativeVideoSurface) {
       return Positioned.fill(
         child: NativeVideoView(
           player: mediaKitBackend.player,
           zoomMode: _nativeZoomMode(_zoomMode),
           fill: Colors.black,
           videoOutput: selectedVo,
-          hardwareDecodingEnabled: hwDecodingEnabled,
+          hardwareDecodingEnabled: mediaKitBackend.hardwareDecodingEnabled,
           onVoReady: _onVoReady,
         ),
       );
