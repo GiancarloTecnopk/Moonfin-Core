@@ -10,6 +10,7 @@ import '../../auth/store/authentication_store.dart';
 import '../../auth/store/credential_store.dart';
 import '../../preference/preference_constants.dart';
 import '../../preference/user_preferences.dart';
+import '../../util/platform_detection.dart';
 import '../models/aggregated_item.dart';
 import '../models/aggregated_library.dart';
 import '../models/home_row.dart';
@@ -1035,7 +1036,30 @@ class MultiServerRepository {
   Future<HomeRow> getAggregatedLibraryTiles({
     HomeRowType rowType = HomeRowType.libraryTiles,
   }) async {
-    final libraries = await getAggregatedLibraries();
+    final libraries = List<AggregatedLibrary>.from(
+      await getAggregatedLibraries(),
+    );
+
+    // Jellyfin 12.2 may return an empty/partial visible-views set through the
+    // multi-server path even though the current user's full views are present.
+    // The Android TV "I Miei Media" launcher must mirror the classic Fire TV
+    // client (Live TV, Movies, 4K, Recordings, Series), so merge the current
+    // user's complete view list as a fallback and keep existing aggregated
+    // entries when they already exist.
+    if (PlatformDetection.isAndroid &&
+        PlatformDetection.isTV &&
+        GetIt.instance.isRegistered<UserViewsRepository>()) {
+      try {
+        final fallback =
+            await GetIt.instance<UserViewsRepository>().getAllViewsIncludingHidden();
+        final seen = libraries.map((lib) => lib.id).toSet();
+        for (final lib in fallback) {
+          if (lib.id.isEmpty || lib.name.isEmpty || !seen.add(lib.id)) continue;
+          libraries.add(lib);
+        }
+      } catch (_) {}
+    }
+
     final items = libraries
         .map(
           (lib) => AggregatedItem(
