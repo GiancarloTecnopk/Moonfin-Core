@@ -245,7 +245,12 @@ class _NavigationLayoutState extends State<NavigationLayout> with WidgetsBinding
   }
 
   Widget _buildToolbar() {
-    final translateWithScroll = PlatformDetection.isTV && !widget.pinTopToolbar;
+    final keepAndroidTvToolbarPinned =
+        PlatformDetection.isAndroid && PlatformDetection.isTV;
+    final translateWithScroll =
+        PlatformDetection.isTV &&
+        !widget.pinTopToolbar &&
+        !keepAndroidTvToolbarPinned;
     final content = _content;
     final toolbar = ValueListenableBuilder<bool>(
       valueListenable: NavigationLayout.trailerImmersiveNotifier,
