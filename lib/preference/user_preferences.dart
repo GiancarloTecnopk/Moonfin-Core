@@ -2798,16 +2798,17 @@ class UserPreferences extends ChangeNotifier {
         .where((c) => c.isPluginDynamic || c.type != HomeSectionType.none)
         .toList();
 
-    // Moonfin REC on Android TV keeps the classic "I Miei Media" launcher
-    // available regardless of a synced/newer home-layout preference. This is
-    // the large quick-access row used on the Fire TV client for Live TV,
-    // Movies, 4K, Recordings and Series.
+    // Moonfin REC on Android TV keeps the classic "I Miei Media" quick
+    // launcher available regardless of a synced/newer home-layout preference.
+    // IMPORTANT: the large button row used by the old Fire TV layout is the
+    // libraryButtons section (which renders HomeRowType.libraryTilesSmall),
+    // not libraryTilesSmall (which renders the artwork/card row).
     if (PlatformDetection.isAndroid &&
         PlatformDetection.isTV &&
         !visible.any(
           (c) =>
               c.isBuiltin &&
-              c.type == HomeSectionType.libraryTilesSmall,
+              c.type == HomeSectionType.libraryButtons,
         )) {
       final firstOrder = visible.isEmpty
           ? 0
@@ -2815,7 +2816,7 @@ class UserPreferences extends ChangeNotifier {
       visible.insert(
         0,
         HomeSectionConfig(
-          type: HomeSectionType.libraryTilesSmall,
+          type: HomeSectionType.libraryButtons,
           enabled: true,
           order: firstOrder - 1,
         ),
