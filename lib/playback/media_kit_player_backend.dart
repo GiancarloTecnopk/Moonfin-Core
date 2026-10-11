@@ -612,9 +612,20 @@ class MediaKitPlayerBackend extends PlayerBackend {
           _prefs.get(UserPreferences.pgsDirectPlay) && canRenderBitmapSubtitles,
       assDirectPlay: _prefs.get(UserPreferences.assDirectPlay),
       supportsAvc: capabilities.supportsAvc,
-      supportsAvcHigh10: capabilities.supportsAvcHigh10,
+      // MediaKit/libmpv has a software AVC High10 decoder on Android. The
+      // platform probe describes MediaCodec hardware only; using that value
+      // here made Jellyfin transcode High10 to 8-bit even after Moonfin had
+      // deliberately switched from Media3 to libmpv.
+      supportsAvcHigh10:
+          capabilities.supportsAvcHigh10 ||
+          (PlatformDetection.isAndroid && PlatformDetection.isTV),
       avcMainLevel: capabilities.avcMainLevel,
-      avcHigh10Level: capabilities.avcHigh10Level,
+      avcHigh10Level:
+          capabilities.supportsAvcHigh10
+          ? capabilities.avcHigh10Level
+          : (PlatformDetection.isAndroid && PlatformDetection.isTV
+                ? 52
+                : capabilities.avcHigh10Level),
       supportsHevc: capabilities.supportsHevc,
       supportsHevcMain10: capabilities.supportsHevcMain10,
       transcodeHevcAllowed: serverAllowsHevcTranscode(),
