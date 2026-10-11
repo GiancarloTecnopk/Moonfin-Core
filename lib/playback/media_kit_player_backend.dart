@@ -18,6 +18,7 @@ import 'hdr_output_controller.dart';
 import 'known_defects.dart';
 import 'letterbox_croppers.dart';
 import 'mpv_letterbox_crop.dart';
+import 'moonfin_rec_surface_policy.dart';
 import 'server_transcode_capabilities.dart';
 
 class _ParsedMpvConfCacheEntry {
@@ -443,10 +444,14 @@ class MediaKitPlayerBackend extends PlayerBackend {
     bool forceTextureSurface = false,
     bool forceSoftwareDecode = false,
   }) {
-    final usesNativeVideoSurface =
-        _useNativeSurface && !forceTextureSurface;
-    final hwDecodingEnabled =
-        !forceSoftwareDecode && prefs.get(UserPreferences.hardwareDecoding);
+    final usesNativeVideoSurface = moonfinRecUsesNativeVideoSurface(
+      platformUsesNativeSurface: _useNativeSurface,
+      forceTextureSurface: forceTextureSurface,
+    );
+    final hwDecodingEnabled = moonfinRecHardwareDecodeEnabled(
+      preferenceEnabled: prefs.get(UserPreferences.hardwareDecoding),
+      forceSoftwareDecode: forceSoftwareDecode,
+    );
     final String? hwdec = hwDecodingEnabled
         ? (PlatformDetection.isAndroid && PlatformDetection.isTV
               ? 'auto-copy'
