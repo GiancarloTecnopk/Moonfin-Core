@@ -181,6 +181,7 @@ class MediaKitPlayerBackend extends PlayerBackend {
   final UserPreferences _prefs;
   final Future<void> Function(int handle)? _onNativeHandleReady;
   final bool _hwDecodingEnabled;
+  final bool _softwareVideoDecode;
 
   /// Owns the decision about native HDR output and the window it needs.
   /// Public so the playback info sheet can report what actually happened.
@@ -421,6 +422,7 @@ class MediaKitPlayerBackend extends PlayerBackend {
     this._prefs,
     this._onNativeHandleReady,
     this._hwDecodingEnabled,
+    this._softwareVideoDecode,
   ) {
     _letterboxCropper = MpvLetterboxCropper(
       _MediaKitLetterboxHost(this),
@@ -436,8 +438,12 @@ class MediaKitPlayerBackend extends PlayerBackend {
   factory MediaKitPlayerBackend(
     UserPreferences prefs, {
     Future<void> Function(int handle)? onNativeHandleReady,
+    bool forceTextureSurface = false,
+    bool forceSoftwareDecode = false,
   }) {
-    final hwDecodingEnabled = prefs.get(UserPreferences.hardwareDecoding);
+    final useNativeSurface = _useNativeSurface && !forceTextureSurface;
+    final hwDecodingEnabled =
+        !forceSoftwareDecode && prefs.get(UserPreferences.hardwareDecoding);
     final String? hwdec = hwDecodingEnabled
         ? (PlatformDetection.isAndroid && PlatformDetection.isTV
               ? 'auto-copy'
@@ -503,7 +509,7 @@ class MediaKitPlayerBackend extends PlayerBackend {
         _nativeSetProperty(platform, 'tone-mapping', 'auto');
       }
 
-      if (_useNativeSurface) {
+      if (useNativeSurface) {
         _nativeSetProperty(platform, 'vo', 'null');
         _nativeSetProperty(
           platform,
@@ -521,7 +527,7 @@ class MediaKitPlayerBackend extends PlayerBackend {
     }
 
     VideoController? controller;
-    if (_useNativeSurface) {
+    if (useNativeSurface) {
       player.platform?.isVideoControllerAttached = true;
       if (!(player.platform?.videoControllerCompleter.isCompleted ?? true)) {
         player.platform?.videoControllerCompleter.complete();
@@ -544,6 +550,7 @@ class MediaKitPlayerBackend extends PlayerBackend {
       prefs,
       onNativeHandleReady,
       hwDecodingEnabled,
+      forceSoftwareDecode,
     );
   }
 
@@ -617,15 +624,12 @@ class MediaKitPlayerBackend extends PlayerBackend {
       // here made Jellyfin transcode High10 to 8-bit even after Moonfin had
       // deliberately switched from Media3 to libmpv.
       supportsAvcHigh10:
-          capabilities.supportsAvcHigh10 ||
-          (PlatformDetection.isAndroid && PlatformDetection.isTV),
+          capabilities.supportsAvcHigh10 || _softwareVideoDecode,
       avcMainLevel: capabilities.avcMainLevel,
       avcHigh10Level:
           capabilities.supportsAvcHigh10
           ? capabilities.avcHigh10Level
-          : (PlatformDetection.isAndroid && PlatformDetection.isTV
-                ? 52
-                : capabilities.avcHigh10Level),
+          : (_softwareVideoDecode ? 52 : capabilities.avcHigh10Level),
       supportsHevc: capabilities.supportsHevc,
       supportsHevcMain10: capabilities.supportsHevcMain10,
       transcodeHevcAllowed: serverAllowsHevcTranscode(),
