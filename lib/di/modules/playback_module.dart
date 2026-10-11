@@ -141,6 +141,38 @@ bool _hasUnsupportedDolbyVisionProfile(StreamResolutionResult resolution) {
   return false;
 }
 
+bool _isAvcHigh10Stream(Map<dynamic, dynamic> stream) {
+  final type = stream['Type']?.toString().toLowerCase();
+  if (type != null && type != 'video') return false;
+
+  final codec = stream['Codec']?.toString().toLowerCase();
+  if (codec != 'h264' && codec != 'avc') return false;
+
+  final profile = stream['Profile']?.toString().toLowerCase() ?? '';
+  final bitDepth = _asInt(stream['BitDepth']) ?? 0;
+  return profile.contains('high 10') ||
+      profile.contains('high10') ||
+      bitDepth > 8;
+}
+
+/// Media3 on many Fire TV / Android TV devices only exposes the hardware AVC
+/// decoder, which does not accept H.264 High 10. libmpv can decode it in
+/// software, so choose that backend before asking Jellyfin for a stream. This
+/// preserves the original 10-bit source instead of forcing a QSV 10->8-bit
+/// transcode and keeps the normal Media3 path for ordinary H.264/HEVC content.
+bool _itemNeedsSoftwareAvcHigh10(AggregatedItem item) {
+  if (item.mediaStreams.any(_isAvcHigh10Stream)) return true;
+
+  for (final source in item.mediaSources) {
+    final streams = source['MediaStreams'];
+    if (streams is! List) continue;
+    for (final stream in streams.whereType<Map>()) {
+      if (_isAvcHigh10Stream(stream)) return true;
+    }
+  }
+  return false;
+}
+
 bool _isEpisodeQueueItem(AggregatedItem item) {
   final type = item.type?.trim().toLowerCase();
   return type == 'episode';
@@ -475,6 +507,21 @@ void registerPlaybackModule() {
       final preferMedia3 =
           prefs.get(UserPreferences.playbackEnginePreference) ==
           PlaybackEnginePreference.media3;
+
+      // High 10 AVC needs the software-capable libmpv backend on Android TV.
+      // _ensureResolverForItem switches before resolution so Jellyfin sees
+      // libmpv's High10-capable profile and returns Direct Play. Keep the same
+      // backend here after resolution instead of immediately switching back.
+      final currentItem = manager.queueService.currentItem;
+      final needsSoftwareHigh10 =
+          PlatformDetection.isTV &&
+          currentItem is AggregatedItem &&
+          _itemNeedsSoftwareAvcHigh10(currentItem);
+      if (preferMedia3 && needsSoftwareHigh10) {
+        if (currentBackend is MediaKitPlayerBackend) return currentBackend;
+        return _getIt<MediaKitPlayerBackend>();
+      }
+
       if (preferMedia3) {
         if (currentBackend is Media3PlayerBackend) return currentBackend;
         return _getIt<Media3PlayerBackend>();
@@ -801,4 +848,26 @@ Future<void> _ensureResolverForItem(dynamic item) async {
   final client = factory.getClientIfExists(item.serverId);
   if (client == null) return;
   setActiveStreamResolver(client);
+
+  // Backend selection normally happens after stream resolution, but the
+  // backend's device profile is what Jellyfin uses to decide Direct Play vs
+  // transcode. Preselect libmpv for AVC High10 before resolving so the server
+  // never receives Media3's hardware-only High10 limitation. For every other
+  // Android-TV item restore Media3 before resolving; this also preserves the
+  // intentional server fallback for legacy MPEG-4/XviD in Media3's profile.
+  if (PlatformDetection.isAndroid && PlatformDetection.isTV) {
+    final prefs = _getIt<UserPreferences>();
+    final preferMedia3 =
+        prefs.get(UserPreferences.playbackEnginePreference) ==
+        PlaybackEnginePreference.media3;
+    if (preferMedia3) {
+      final manager = _getIt<PlaybackManager>();
+      final target = _itemNeedsSoftwareAvcHigh10(item)
+          ? _getIt<MediaKitPlayerBackend>()
+          : _getIt<Media3PlayerBackend>();
+      if (!identical(manager.backend, target)) {
+        manager.setBackend(target, disposePrevious: false);
+      }
+    }
+  }
 }
