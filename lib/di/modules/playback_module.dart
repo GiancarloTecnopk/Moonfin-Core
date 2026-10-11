@@ -384,6 +384,7 @@ void registerPlaybackModule() {
   final prefs = _getIt<UserPreferences>();
 
   MediaKitPlayerBackend? backend;
+  MediaKitPlayerBackend? high10SoftwareBackend;
   Media3PlayerBackend? media3Backend;
   AppleTvBackend? appleTvBackend;
   AetherBackend? iosBackend;
@@ -400,6 +401,20 @@ void registerPlaybackModule() {
   } else {
     backend = MediaKitPlayerBackend(prefs);
     _getIt.registerSingleton<MediaKitPlayerBackend>(backend);
+    // High10 on Android TV cannot use the normal native-surface path: that
+    // path is designed around hardware-decoded frames. Use a separate libmpv
+    // instance with the regular texture renderer and software H.264 decode.
+    if (PlatformDetection.isAndroid && PlatformDetection.isTV) {
+      high10SoftwareBackend = MediaKitPlayerBackend(
+        prefs,
+        forceTextureSurface: true,
+        forceSoftwareDecode: true,
+      );
+      _getIt.registerSingleton<MediaKitPlayerBackend>(
+        high10SoftwareBackend,
+        instanceName: 'high10Software',
+      );
+    }
     // The constructor subscribes to moonfin/media3_video_events, which only
     // Android implements, so building this anywhere else raises on its own.
     if (PlatformDetection.isAndroid) {
@@ -548,8 +563,11 @@ void registerPlaybackModule() {
                   _itemNeedsSoftwareAvcHigh10(currentItem)) ||
               _resolutionNeedsSoftwareAvcHigh10(resolution));
       if (preferMedia3 && needsSoftwareHigh10) {
-        if (currentBackend is MediaKitPlayerBackend) return currentBackend;
-        return _getIt<MediaKitPlayerBackend>();
+        final high10 = _getIt<MediaKitPlayerBackend>(
+          instanceName: 'high10Software',
+        );
+        if (identical(currentBackend, high10)) return currentBackend;
+        return high10;
       }
 
       if (preferMedia3) {
@@ -895,7 +913,7 @@ Future<void> _ensureResolverForItem(dynamic item) async {
       final needsSoftwareHigh10 =
           await _needsSoftwareAvcHigh10BeforeResolve(item, client);
       final target = needsSoftwareHigh10
-          ? _getIt<MediaKitPlayerBackend>()
+          ? _getIt<MediaKitPlayerBackend>(instanceName: 'high10Software')
           : _getIt<Media3PlayerBackend>();
 
       _getIt<LogService>().log(
