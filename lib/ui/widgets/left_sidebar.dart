@@ -298,27 +298,39 @@ class _LeftSidebarState extends State<LeftSidebar> with RouteAware {
   }
 
   Future<void> _loadLibraries() async {
+    final useMultiServer = _prefs.get(
+      UserPreferences.enableMultiServerLibraries,
+    );
+
+    List<AggregatedLibrary> libs = const <AggregatedLibrary>[];
     try {
-      final useMultiServer = _prefs.get(
-        UserPreferences.enableMultiServerLibraries,
-      );
-      final libs = useMultiServer
+      libs = useMultiServer
           ? await GetIt.instance<MultiServerRepository>()
                 .getAggregatedLibraries()
           : await _viewsRepo.getUserViews();
-
-      unawaited(GetIt.instance<GameLibraryRegistry>().refresh());
-
-      final filtered = useMultiServer
-          ? await GetIt.instance<LibraryScopeService>().withoutHiddenLibraries(
-              libs,
-            )
-          : libs;
-
-      if (mounted && !_librariesEqual(_libraries, filtered)) {
-        setState(() => _libraries = filtered);
-      }
     } catch (_) {}
+
+    if (libs.isEmpty &&
+        PlatformDetection.isAndroid &&
+        PlatformDetection.isTV) {
+      try {
+        libs = await _viewsRepo.getAllViewsIncludingHidden();
+      } catch (_) {}
+    }
+
+    unawaited(GetIt.instance<GameLibraryRegistry>().refresh());
+
+    List<AggregatedLibrary> filtered = libs;
+    if (useMultiServer && libs.isNotEmpty) {
+      try {
+        filtered = await GetIt.instance<LibraryScopeService>()
+            .withoutHiddenLibraries(libs);
+      } catch (_) {}
+    }
+
+    if (mounted && !_librariesEqual(_libraries, filtered)) {
+      setState(() => _libraries = filtered);
+    }
   }
 
   bool _librariesEqual(List<AggregatedLibrary> a, List<AggregatedLibrary> b) {
@@ -333,8 +345,10 @@ class _LeftSidebarState extends State<LeftSidebar> with RouteAware {
   // dead end.
   bool get _showLiveTvButton =>
       !_kidsMode &&
-      _prefs.get(UserPreferences.showLiveTvButton) &&
-      _libraries.any(isLiveTvLibrary);
+      ((PlatformDetection.isAndroid && PlatformDetection.isTV) ||
+          _prefs.get(UserPreferences.showLiveTvButton)) &&
+      ((PlatformDetection.isAndroid && PlatformDetection.isTV) ||
+          _libraries.any(isLiveTvLibrary));
 
   List<AggregatedLibrary> get _navLibraries =>
       librariesForNav(_libraries, _showLiveTvButton, hideLiveTv: _kidsMode);
@@ -874,10 +888,14 @@ class _LeftSidebarState extends State<LeftSidebar> with RouteAware {
     // Checked alongside the show* preferences, never written into them, since
     // those sync and would follow the account to the parent's other devices.
     final kidsMode = _kidsMode;
+    final forceAndroidTvNavigation =
+        PlatformDetection.isAndroid && PlatformDetection.isTV && !kidsMode;
     final showLiveTv = _showLiveTvButton;
     final navLibraries = _navLibraries;
     final showLibraries =
-        !kidsMode && _prefs.get(UserPreferences.showLibrariesInToolbar);
+        !kidsMode &&
+        (forceAndroidTvNavigation ||
+            _prefs.get(UserPreferences.showLibrariesInToolbar));
     final showFolders = _prefs.get(UserPreferences.enableFolderView);
     final showSyncPlay =
         !kidsMode &&
