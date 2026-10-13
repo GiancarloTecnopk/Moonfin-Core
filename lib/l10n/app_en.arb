@@ -12139,5 +12139,26 @@
   "keepVideoClearOfDynamicIslandDescription": "In landscape the camera housing covers one edge of the screen. This holds the picture back from it, which only changes anything for video wide enough to reach that far.",
   "@keepVideoClearOfDynamicIslandDescription": {
     "description": "Description for the iPhone setting that keeps video clear of the Dynamic Island"
+  },
+  "refreshJellyfinLibraries": "Refresh Jellyfin libraries",
+  "@refreshJellyfinLibraries": {
+    "description": "Settings action that starts a full Jellyfin library scan"
+  },
+  "refreshJellyfinLibrariesDescription": "Start a Jellyfin library scan without opening the Jellyfin web interface",
+  "@refreshJellyfinLibrariesDescription": {
+    "description": "Subtitle for the one-click Jellyfin library refresh action"
+  },
+  "jellyfinLibraryRefreshStarted": "Jellyfin library scan started",
+  "@jellyfinLibraryRefreshStarted": {
+    "description": "Confirmation shown after the Jellyfin library refresh request is accepted"
+  },
+  "jellyfinLibraryRefreshFailed": "Could not start the Jellyfin library scan: {error}",
+  "@jellyfinLibraryRefreshFailed": {
+    "description": "Error shown when Moonfin cannot start a Jellyfin library scan",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
   }
 }
