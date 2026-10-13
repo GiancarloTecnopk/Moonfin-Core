@@ -1,7 +1,43 @@
 part of '../settings_side_panel.dart';
 
-class _LibrariesCategoryScreen extends StatelessWidget {
+class _LibrariesCategoryScreen extends StatefulWidget {
   const _LibrariesCategoryScreen();
+
+  @override
+  State<_LibrariesCategoryScreen> createState() =>
+      _LibrariesCategoryScreenState();
+}
+
+class _LibrariesCategoryScreenState extends State<_LibrariesCategoryScreen> {
+  bool _libraryRefreshStarting = false;
+
+  Future<void> _refreshJellyfinLibraries() async {
+    if (_libraryRefreshStarting) return;
+    setState(() => _libraryRefreshStarting = true);
+
+    final l10n = AppLocalizations.of(context);
+    try {
+      final client = GetIt.instance<MediaServerClient>();
+      await client.adminLibraryApi.refreshLibrary();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.jellyfinLibraryRefreshStarted)),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            l10n.jellyfinLibraryRefreshFailed(describeError(error, l10n)),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _libraryRefreshStarting = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -19,6 +55,23 @@ class _LibrariesCategoryScreen extends StatelessWidget {
                 subtitle: Text(l10n.settingsLibraryVisibilitySubtitle),
                 onTap: () =>
                     context.pushSettingsScreen(const LibraryVisibilityScreen()),
+              ),
+              _TvSettingsListTile(
+                leading: _libraryRefreshStarting
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.sync),
+                title: Text(l10n.refreshJellyfinLibraries),
+                subtitle: Text(l10n.refreshJellyfinLibrariesDescription),
+                trailing: _libraryRefreshStarting
+                    ? null
+                    : const Icon(Icons.play_arrow_rounded),
+                onTap: _libraryRefreshStarting
+                    ? null
+                    : () => unawaited(_refreshJellyfinLibraries()),
               ),
               SwitchPreferenceTile(
                 preference: UserPreferences.enableMultiServerLibraries,
