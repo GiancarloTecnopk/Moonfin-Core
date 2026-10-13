@@ -622,6 +622,108 @@ void main() {
     });
   });
 
+  group('DeviceProfileBuilder AVC High10 -> HEVC Main10 fallback', () {
+    test('prefers HEVC before H264 when the server allows HEVC encoding', () {
+      final profile = DeviceProfileBuilder.build(
+        supportsAvc: true,
+        avcMainLevel: 51,
+        supportsHevc: true,
+        supportsHevcMain10: true,
+        transcodeHevcAllowed: true,
+        preferFmp4Hls: true,
+        preferHevcMain10ForAvcHigh10Transcode: true,
+      );
+
+      final transcodes =
+          (profile['TranscodingProfiles'] as List<dynamic>)
+              .cast<Map<String, dynamic>>();
+      final video = transcodes.firstWhere((entry) => entry['Type'] == 'Video');
+
+      expect(video['VideoCodec'], 'hevc,h264');
+    });
+
+    test('maps an AVC High10 source to HEVC Main10 at 10 bit', () {
+      final profile = DeviceProfileBuilder.build(
+        supportsAvc: true,
+        avcMainLevel: 51,
+        supportsHevc: true,
+        supportsHevcMain10: true,
+        transcodeHevcAllowed: true,
+        preferHevcMain10ForAvcHigh10Transcode: true,
+      );
+
+      final codecProfiles =
+          (profile['CodecProfiles'] as List<dynamic>)
+              .cast<Map<String, dynamic>>();
+      final targeted = codecProfiles.firstWhere((entry) {
+        if (entry['Type'] != 'Video' || entry['Codec'] != 'hevc') {
+          return false;
+        }
+        final apply =
+            (entry['ApplyConditions'] as List<dynamic>? ?? const [])
+                .cast<Map<String, dynamic>>();
+        return apply.any(
+          (condition) =>
+              condition['Property'] == 'VideoProfile' &&
+              condition['Condition'] == 'EqualsAny' &&
+              (condition['Value'] as String).contains('high 10'),
+        );
+      });
+
+      final conditions =
+          (targeted['Conditions'] as List<dynamic>)
+              .cast<Map<String, dynamic>>();
+      expect(
+        conditions,
+        contains(
+          predicate<Map<String, dynamic>>(
+            (condition) =>
+                condition['Property'] == 'VideoProfile' &&
+                condition['Condition'] == 'Equals' &&
+                condition['Value'] == 'main 10',
+          ),
+        ),
+      );
+      expect(
+        conditions,
+        contains(
+          predicate<Map<String, dynamic>>(
+            (condition) =>
+                condition['Property'] == 'VideoBitDepth' &&
+                condition['Condition'] == 'Equals' &&
+                condition['Value'] == '10',
+          ),
+        ),
+      );
+    });
+
+    test('does not add the Main10 steering rule when disabled', () {
+      final profile = DeviceProfileBuilder.build(
+        supportsHevc: true,
+        supportsHevcMain10: true,
+      );
+
+      final codecProfiles =
+          (profile['CodecProfiles'] as List<dynamic>)
+              .cast<Map<String, dynamic>>();
+      final targeted = codecProfiles.where((entry) {
+        if (entry['Type'] != 'Video' || entry['Codec'] != 'hevc') {
+          return false;
+        }
+        final apply =
+            (entry['ApplyConditions'] as List<dynamic>? ?? const [])
+                .cast<Map<String, dynamic>>();
+        return apply.any(
+          (condition) =>
+              condition['Property'] == 'VideoProfile' &&
+              (condition['Value']?.toString().contains('high 10') ?? false),
+        );
+      });
+
+      expect(targeted, isEmpty);
+    });
+  });
+
   group('DeviceProfileBuilder HEVC Main 10', () {
     test('a device without a 10 bit HEVC decoder transcodes Main 10', () {
       final profile = DeviceProfileBuilder.build(
