@@ -1180,6 +1180,10 @@ class Media3PlayerBackend extends PlayerBackend {
     final maxResolution = _prefs.get(UserPreferences.maxVideoResolution);
     final audioCapabilityProfile = _prefs.detectedAudioCapabilities;
 
+    final isAndroidTv =
+        PlatformDetection.isAndroid && PlatformDetection.isTV;
+    final hevcTranscodeAllowed = serverAllowsHevcTranscode();
+
     return DeviceProfileBuilder.build(
       maxBitrateMbps: maxBitrate,
       audioCapabilityProfile: audioCapabilityProfile,
@@ -1202,12 +1206,22 @@ class Media3PlayerBackend extends PlayerBackend {
           _prefs.get(UserPreferences.pgsDirectPlay) && canRenderBitmapSubtitles,
       assDirectPlay: _prefs.get(UserPreferences.assDirectPlay),
       supportsAvc: PlatformDetection.supportsAvc,
-      supportsAvcHigh10: PlatformDetection.supportsAvcHigh10,
+      // Fire TV / Android TV MediaCodec is not a reliable AVC High10 decoder.
+      // Never advertise it there: let Jellyfin transcode before playback
+      // rather than failing after the audio stream has already started.
+      supportsAvcHigh10:
+          isAndroidTv ? false : PlatformDetection.supportsAvcHigh10,
       avcMainLevel: PlatformDetection.avcMainLevel,
-      avcHigh10Level: PlatformDetection.avcHigh10Level,
+      avcHigh10Level:
+          isAndroidTv ? 0 : PlatformDetection.avcHigh10Level,
       supportsHevc: PlatformDetection.supportsHevc,
       supportsHevcMain10: PlatformDetection.supportsHevcMain10,
-      transcodeHevcAllowed: serverAllowsHevcTranscode(),
+      transcodeHevcAllowed: hevcTranscodeAllowed,
+      preferHevcMain10ForAvcHigh10Transcode:
+          isAndroidTv &&
+          hevcTranscodeAllowed &&
+          PlatformDetection.supportsHevc &&
+          PlatformDetection.supportsHevcMain10,
       hevcMainLevel: PlatformDetection.hevcMainLevel,
       supportsHevcDolbyVision: PlatformDetection.supportsHevcDolbyVision,
       supportsHevcDolbyVisionEl: PlatformDetection.supportsHevcDolbyVisionEl,
