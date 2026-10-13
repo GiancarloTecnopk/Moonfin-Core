@@ -10094,5 +10094,26 @@
                 "type": "String"
             }
         }
+    },
+    "refreshJellyfinLibraries": "Aggiorna librerie Jellyfin",
+    "@refreshJellyfinLibraries": {
+        "description": "Azione nelle impostazioni che avvia una scansione completa delle librerie Jellyfin"
+    },
+    "refreshJellyfinLibrariesDescription": "Avvia la scansione delle librerie Jellyfin senza aprire l'interfaccia web",
+    "@refreshJellyfinLibrariesDescription": {
+        "description": "Descrizione del comando rapido per aggiornare le librerie Jellyfin"
+    },
+    "jellyfinLibraryRefreshStarted": "Scansione librerie Jellyfin avviata",
+    "@jellyfinLibraryRefreshStarted": {
+        "description": "Conferma mostrata dopo l'avvio della scansione librerie Jellyfin"
+    },
+    "jellyfinLibraryRefreshFailed": "Impossibile avviare la scansione Jellyfin: {error}",
+    "@jellyfinLibraryRefreshFailed": {
+        "description": "Errore mostrato quando Moonfin non riesce ad avviare la scansione Jellyfin",
+        "placeholders": {
+            "error": {
+                "type": "String"
+            }
+        }
     }
 }
