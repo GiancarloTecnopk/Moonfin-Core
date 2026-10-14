@@ -214,6 +214,27 @@ class _SettingsSidePanelState extends ConsumerState<SettingsSidePanel> {
     await pin.removePin();
   }
 
+  Future<void> _refreshJellyfinLibrariesFromMainSettings() async {
+    final l10n = AppLocalizations.of(context);
+    try {
+      final client = GetIt.instance<MediaServerClient>();
+      await client.adminLibraryApi.refreshLibrary();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.jellyfinLibraryRefreshStarted)),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            l10n.jellyfinLibraryRefreshFailed(describeError(error, l10n)),
+          ),
+        ),
+      );
+    }
+  }
+
   void _closeSettingsPanel() {
     final rootNavigator = Navigator.of(context, rootNavigator: true);
     if (rootNavigator.canPop()) {
@@ -338,6 +359,13 @@ class _SettingsSidePanelState extends ConsumerState<SettingsSidePanel> {
               subtitle: l10n.settingsPersonalizationSubtitle,
               onTap: () =>
                   context.pushSettingsScreen(const _CustomizationCategoryScreen()),
+            ),
+            _PanelEntry(
+              icon: Icons.sync,
+              title: l10n.refreshJellyfinLibraries,
+              subtitle: l10n.refreshJellyfinLibrariesDescription,
+              onTap: () =>
+                  unawaited(_refreshJellyfinLibrariesFromMainSettings()),
             ),
             _PanelEntry(
               icon: Icons.play_circle,
