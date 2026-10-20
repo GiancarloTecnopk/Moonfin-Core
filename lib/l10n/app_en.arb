@@ -13935,5 +13935,66 @@
   "librarySortLength": "Length",
   "@librarySortLength": {
     "description": "Sort option for music: by track or album length"
+  },
+  "refreshJellyfinLibraries": "Refresh Jellyfin libraries",
+  "@refreshJellyfinLibraries": {
+    "description": "Main settings action that starts a full Jellyfin library scan"
+  },
+  "refreshJellyfinLibrariesDescription": "Scan the Jellyfin libraries without opening the Jellyfin web interface",
+  "@refreshJellyfinLibrariesDescription": {
+    "description": "Subtitle for the Jellyfin library refresh action"
+  },
+  "jellyfinLibraryRefreshStarted": "Jellyfin library scan started",
+  "@jellyfinLibraryRefreshStarted": {
+    "description": "Confirmation shown when a Jellyfin library scan starts"
+  },
+  "jellyfinLibraryRefreshFailed": "Could not start the Jellyfin library scan: {error}",
+  "@jellyfinLibraryRefreshFailed": {
+    "description": "Error shown when a Jellyfin library scan cannot be started",
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "refreshEpg": "Refresh EPG",
+  "@refreshEpg": {
+    "description": "Main settings action that starts Jellyfin Refresh Guide"
+  },
+  "refreshEpgDescription": "Reload Live TV guide data in Jellyfin",
+  "@refreshEpgDescription": {
+    "description": "Subtitle for the EPG refresh action"
+  },
+  "epgRefreshFailed": "Could not start the EPG refresh: {error}",
+  "@epgRefreshFailed": {
+    "description": "Error shown when the EPG refresh task cannot be started",
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "pleaseWait": "Please wait…",
+  "@pleaseWait": {
+    "description": "Short busy-state label"
+  },
+  "manualRecordingWithoutEpg": "Recording without EPG",
+  "@manualRecordingWithoutEpg": {
+    "description": "Title of the fixed-duration recording dialog when no guide programme is available"
+  },
+  "chooseRecordingDuration": "Choose the recording duration",
+  "@chooseRecordingDuration": {
+    "description": "Prompt for a fixed-duration Live TV recording"
+  },
+  "recordingMinutes": "{count} minutes",
+  "@recordingMinutes": {
+    "description": "Fixed recording duration in minutes",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "deleteRecordingTitle": "Delete recording",
+  "@deleteRecordingTitle": {
+    "description": "Confirmation dialog title for deleting a completed recording"
+  },
+  "recordingDeleted": "Recording deleted",
+  "@recordingDeleted": {
+    "description": "Confirmation after a completed recording was deleted"
   }
 }
