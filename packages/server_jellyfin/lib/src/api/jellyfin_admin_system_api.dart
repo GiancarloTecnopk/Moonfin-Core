@@ -40,6 +40,27 @@ class JellyfinAdminSystemApi implements AdminSystemApi {
   }
 
   @override
+  Future<void> refreshLiveTvGuide() async {
+    final response = await _dio.get('/ScheduledTasks');
+    final tasks = response.data as List<dynamic>;
+    final guideTask = tasks.cast<Map<String, dynamic>>().where(
+      (task) => task['Key'] == 'RefreshGuide',
+    );
+    if (guideTask.isEmpty) {
+      throw StateError('Jellyfin: attività Refresh Guide non trovata');
+    }
+    final task = guideTask.first;
+    if (task['State'] == 'Running') {
+      return;
+    }
+    final id = task['Id']?.toString();
+    if (id == null || id.isEmpty) {
+      throw StateError('Jellyfin: ID attività Refresh Guide mancante');
+    }
+    await _dio.post('/ScheduledTasks/Running/${Uri.encodeComponent(id)}');
+  }
+
+  @override
   Future<void> restartServer() async {
     await _dio.post('/System/Restart');
   }
