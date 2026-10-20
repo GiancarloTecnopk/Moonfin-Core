@@ -66,6 +66,9 @@ jobs:
           EOF
 
       - name: Build Android TV REC APK
+        env:
+          # Must match the installed Moonfin REC 2.6 package id (org.moonfin.androidtv.rec).
+          MOONFIN_TEST_ID_SUFFIX: .rec
         run: |
           TV_VERSION=$(grep '^  android_tv_version:' pubspec.yaml | awk '{print $2}')
           TV_BUILD_NUMBER=$(grep '^  android_tv_build_number:' pubspec.yaml | awk '{print $2}')
