@@ -164,6 +164,9 @@ class DeviceProfileBuilder {
     // the probed Jellyfin encoding options so servers that never enabled
     // HEVC encoding keep receiving an H264-only offer.
     bool transcodeHevcAllowed = false,
+    // If the source is AVC High10 and the playback device can decode HEVC
+    // Main10, keep the 10-bit source depth when Jellyfin must transcode it.
+    bool preferHevcMain10ForAvcHigh10Transcode = false,
     // Keeps HEVC out of the MPEG-TS transcode offer and lists the fMP4
     // profile first so the server prefers it. The HLS spec only carries HEVC
     // in fMP4, and AVFoundation leaves an HEVC in TS transcode as a black
@@ -458,6 +461,8 @@ class DeviceProfileBuilder {
       avcMainLevel: effectiveAvcMainLevel,
       avcHigh10Level: effectiveAvcHigh10Level,
       capsAvcRefFrames: capsAvcRefFrames,
+      preferHevcMain10ForAvcHigh10Transcode:
+          preferHevcMain10ForAvcHigh10Transcode,
       supportsHevc: effectiveSupportsHevc,
       supportsHevcMain10: effectiveSupportsHevcMain10,
       hevcMainLevel: effectiveHevcMainLevel,
@@ -1080,6 +1085,7 @@ class DeviceProfileBuilder {
     required int avcMainLevel,
     required int avcHigh10Level,
     required bool capsAvcRefFrames,
+    required bool preferHevcMain10ForAvcHigh10Transcode,
     required bool supportsHevc,
     required bool supportsHevcMain10,
     required int hevcMainLevel,
@@ -1249,6 +1255,44 @@ class DeviceProfileBuilder {
               condition: 'GreaterThanEqual',
               property: 'Width',
               value: '1900',
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (preferHevcMain10ForAvcHigh10Transcode &&
+        supportsHevc &&
+        supportsHevcMain10) {
+      // ApplyConditions are evaluated against the source stream while
+      // Conditions constrain the target codec. An AVC High10 source therefore
+      // becomes HEVC Main10 at 10 bit instead of an H.264 8-bit fallback.
+      profiles.add(
+        _codecProfile(
+          type: 'Video',
+          codec: 'hevc',
+          conditions: <Map<String, dynamic>>[
+            _condition(
+              condition: 'Equals',
+              property: 'VideoProfile',
+              value: 'main 10',
+            ),
+            _condition(
+              condition: 'Equals',
+              property: 'VideoBitDepth',
+              value: '10',
+            ),
+          ],
+          applyConditions: <Map<String, dynamic>>[
+            _condition(
+              condition: 'EqualsAny',
+              property: 'VideoProfile',
+              value: 'high 10|high 10 intra',
+            ),
+            _condition(
+              condition: 'GreaterThanEqual',
+              property: 'VideoBitDepth',
+              value: '10',
             ),
           ],
         ),
