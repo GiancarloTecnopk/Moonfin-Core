@@ -1,6 +1,7 @@
 name: Moonfin REC 2.7 Android TV Signed
 
 on:
+  workflow_dispatch:
   push:
     branches: [moonfin-rec-2.7]
     paths-ignore:
