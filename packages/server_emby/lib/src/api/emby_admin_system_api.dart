@@ -39,10 +39,6 @@ class EmbyAdminSystemApi implements AdminSystemApi {
   }
 
   @override
-  Future<void> refreshLiveTvGuide() =>
-      throw UnsupportedError('Questa funzione è disponibile solo su Jellyfin');
-
-  @override
   Future<void> restartServer() async {
     await _dio.post('/System/Restart');
   }
