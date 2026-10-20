@@ -852,4 +852,20 @@ Future<void> _ensureResolverForItem(dynamic item) async {
   final client = factory.getClientIfExists(item.serverId);
   if (client == null) return;
   setActiveStreamResolver(client);
+
+  // Match the working 2.6 path: choose the Android TV playback backend
+  // BEFORE stream resolution so Jellyfin receives the correct device profile.
+  // AVC High10 is deliberately NOT sent to a software backend: the current
+  // Media3 profile excludes High10 and asks the server to transcode it.
+  if (PlatformDetection.isAndroid && PlatformDetection.isTV) {
+    final prefs = _getIt<UserPreferences>();
+    if (prefs.get(UserPreferences.playbackEnginePreference) ==
+        PlaybackEnginePreference.media3) {
+      final manager = _getIt<PlaybackManager>();
+      final target = _getIt<Media3PlayerBackend>();
+      if (!identical(manager.backend, target)) {
+        manager.setBackend(target, disposePrevious: false);
+      }
+    }
+  }
 }
