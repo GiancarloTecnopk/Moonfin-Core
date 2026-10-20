@@ -1161,6 +1161,22 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
         return;
       }
 
+      // REC is one press on Android TV, as in Moonfin REC 2.6.
+      // A future timer/series still opens Jellyfin's recording action dialog.
+      if (shouldInstantRecordCurrentProgram(
+        isTv: PlatformDetection.isTV,
+        hasLiveProgram: _currentProgram != null,
+        canRecordProgram: _canRecordCurrentProgram,
+        hasProgramTimer: _recordingState?.timerId != null,
+        hasSeriesTimer: _recordingState?.seriesTimerId != null,
+      )) {
+        await _client.liveTvApi.createTimer(_currentProgram!.id);
+        message = l10n.programSetToRecord;
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        await _refreshChannelRecording(channel.id);
+        return;
+      }
+
       final program = _currentProgram!;
       final recording = _recordingState!;
       final action = await showLiveTvRecordingDialog(
