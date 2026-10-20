@@ -12,6 +12,55 @@ void main() {
     'EndDate': now.add(const Duration(minutes: 55)).toIso8601String(),
   };
 
+  test('2.6 one-press REC starts current TV programme without a dialog', () {
+    expect(
+      shouldInstantRecordCurrentProgram(
+        isTv: true,
+        hasLiveProgram: true,
+        canRecordProgram: true,
+        hasProgramTimer: false,
+        hasSeriesTimer: false,
+      ),
+      isTrue,
+    );
+    for (final existing in [
+      (false, false),
+      (true, false),
+      (false, true),
+    ]) {
+      expect(
+        shouldInstantRecordCurrentProgram(
+          isTv: true,
+          hasLiveProgram: true,
+          canRecordProgram: true,
+          hasProgramTimer: existing.$1,
+          hasSeriesTimer: existing.$2,
+        ),
+        existing == (false, false),
+      );
+    }
+    expect(
+      shouldInstantRecordCurrentProgram(
+        isTv: false,
+        hasLiveProgram: true,
+        canRecordProgram: true,
+        hasProgramTimer: false,
+        hasSeriesTimer: false,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldInstantRecordCurrentProgram(
+        isTv: true,
+        hasLiveProgram: false,
+        canRecordProgram: false,
+        hasProgramTimer: false,
+        hasSeriesTimer: false,
+      ),
+      isFalse,
+    );
+  });
+
   test('manual timer without programme metadata is found after reopening', () {
     expect(activeChannelTimerId([timer('a', 'InProgress')], 'a', now), 'timer');
     expect(activeChannelTimerId([timer('a', 'New')], 'a', now), 'timer');
