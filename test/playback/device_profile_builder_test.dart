@@ -1156,6 +1156,20 @@ void main() {
       expect(videoProfiles.first['VideoCodec'], 'hevc,h264');
     });
 
+    test('2.6 Media3 fMP4 fallback stays ahead of TS without disabling direct play', () {
+      final profile = DeviceProfileBuilder.build(
+        supportsAvc: true,
+        preferFmp4Hls: true,
+      );
+      final videoProfiles = _hlsVideoTranscodingProfiles(profile);
+      expect(videoProfiles.first['Container'], 'mp4');
+      expect(videoProfiles[1]['Container'], 'ts');
+      final direct = (profile['DirectPlayProfiles'] as List<dynamic>)
+          .cast<Map<String, dynamic>>();
+      expect(direct.first['Container'], contains('ts'));
+      expect(direct.first['VideoCodec'], contains('h264'));
+    });
+
     test('mp3 leaves the HLS offer entirely on AVFoundation', () {
       final profile = DeviceProfileBuilder.build(
         hevcRequiresFmp4Hls: true,
