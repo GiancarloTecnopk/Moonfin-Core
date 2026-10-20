@@ -3,7 +3,7 @@ name: Moonfin REC 2.7 Android TV Signed
 on:
   workflow_dispatch:
   push:
-    branches: [moonfin-rec-2.7]
+    branches: [moonfin-rec-2.7, moonfin-rec-2.7-regression-fixes]
     paths-ignore:
       - '**.md'
 
@@ -45,6 +45,7 @@ jobs:
           (cd packages/server_emby && flutter pub get && flutter test test/emby_live_tv_api_test.dart)
 
       - name: Set up persistent release signing
+        if: github.ref == 'refs/heads/moonfin-rec-2.7'
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           STORE_TYPE: ${{ secrets.ANDROID_KEYSTORE_TYPE }}
@@ -66,6 +67,7 @@ jobs:
           EOF
 
       - name: Build Android TV REC APK
+        if: github.ref == 'refs/heads/moonfin-rec-2.7'
         env:
           # Must match the installed Moonfin REC 2.6 package id (org.moonfin.androidtv.rec).
           MOONFIN_TEST_ID_SUFFIX: .rec
@@ -76,6 +78,7 @@ jobs:
           cp build/app/outputs/flutter-apk/app-androidtv-release.apk             "MoonfinREC_AndroidTV_v${TV_VERSION}.apk"
 
       - uses: actions/upload-artifact@v4
+        if: github.ref == 'refs/heads/moonfin-rec-2.7'
         with:
           name: Moonfin-REC-2.7-AndroidTV
           path: MoonfinREC_AndroidTV_v*.apk
