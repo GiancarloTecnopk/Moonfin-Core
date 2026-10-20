@@ -196,6 +196,8 @@ class _SettingsSidePanelState extends ConsumerState<SettingsSidePanel> {
   final _searchFieldFocus = FocusNode(debugLabel: 'SettingsSearchField');
   final _searchTvFieldKey = GlobalKey<CustomTVTextFieldState>();
   String _query = '';
+  bool _libraryRefreshStarting = false;
+  bool _epgRefreshStarting = false;
 
   /// Turns Kids Mode off once the PIN checks out. The PIN is the whole
   /// boundary, so a missing one leaves the mode on rather than opening it up.
@@ -220,6 +222,67 @@ class _SettingsSidePanelState extends ConsumerState<SettingsSidePanel> {
     // time Kids Mode goes on, someone picks a code for it rather than a
     // forgotten one still quietly being the way out.
     await pin.removePin();
+  }
+
+  Future<void> _refreshJellyfinLibraries() async {
+    if (_libraryRefreshStarting) return;
+    setState(() => _libraryRefreshStarting = true);
+    final l10n = AppLocalizations.of(context);
+    try {
+      final client = GetIt.instance<MediaServerClient>();
+      await client.adminLibraryApi.refreshLibrary();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.jellyfinLibraryRefreshStarted)),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            l10n.jellyfinLibraryRefreshFailed(describeError(error, l10n)),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _libraryRefreshStarting = false);
+    }
+  }
+
+  Future<void> _refreshEpg() async {
+    if (_epgRefreshStarting) return;
+    setState(() => _epgRefreshStarting = true);
+    final l10n = AppLocalizations.of(context);
+    try {
+      final tasksApi = GetIt.instance<MediaServerClient>().adminTasksApi;
+      final tasks = await tasksApi.getTasks(isHidden: false);
+      final task = tasks.cast<Map<String, dynamic>>().firstWhere(
+        (entry) => entry['Key']?.toString() == 'RefreshGuide',
+        orElse: () => const <String, dynamic>{},
+      );
+      final id = task['Id']?.toString() ?? '';
+      if (id.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.adminGuideRefreshUnavailable)),
+        );
+        return;
+      }
+      await tasksApi.startTask(id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.adminGuideRefreshStarted)),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.epgRefreshFailed(describeError(error, l10n))),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _epgRefreshStarting = false);
+    }
   }
 
   void _closeSettingsPanel() {
@@ -353,6 +416,22 @@ class _SettingsSidePanelState extends ConsumerState<SettingsSidePanel> {
               title: l10n.appearance,
               subtitle: l10n.settingsAppearanceSubtitle,
               onTap: () => context.pushSettingsScreen(const _AppearanceScreen()),
+            ),
+            _PanelEntry(
+              icon: Icons.sync,
+              title: l10n.refreshJellyfinLibraries,
+              subtitle: _libraryRefreshStarting
+                  ? l10n.pleaseWait
+                  : l10n.refreshJellyfinLibrariesDescription,
+              onTap: () => unawaited(_refreshJellyfinLibraries()),
+            ),
+            _PanelEntry(
+              icon: Icons.event_repeat,
+              title: l10n.refreshEpg,
+              subtitle: _epgRefreshStarting
+                  ? l10n.pleaseWait
+                  : l10n.refreshEpgDescription,
+              onTap: () => unawaited(_refreshEpg()),
             ),
             _PanelEntry(
               icon: Icons.play_circle,
