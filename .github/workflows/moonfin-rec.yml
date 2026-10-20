@@ -53,7 +53,7 @@ jobs:
           (cd packages/server_emby && flutter pub get && flutter test test/emby_live_tv_api_test.dart)
 
       - name: Set up persistent release signing
-        if: github.ref == 'refs/heads/moonfin-rec-2.7'
+        if: contains(fromJSON('["refs/heads/moonfin-rec-2.7","refs/heads/moonfin-rec-2.7-regression-fixes"]'), github.ref)
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           STORE_TYPE: ${{ secrets.ANDROID_KEYSTORE_TYPE }}
@@ -75,7 +75,7 @@ jobs:
           EOF
 
       - name: Build Android TV REC APK
-        if: github.ref == 'refs/heads/moonfin-rec-2.7'
+        if: contains(fromJSON('["refs/heads/moonfin-rec-2.7","refs/heads/moonfin-rec-2.7-regression-fixes"]'), github.ref)
         env:
           # Must match the installed Moonfin REC 2.6 package id (org.moonfin.androidtv.rec).
           MOONFIN_TEST_ID_SUFFIX: .rec
@@ -85,9 +85,24 @@ jobs:
           flutter build apk --release             --flavor androidTv             --build-name "$TV_VERSION"             --build-number "$TV_BUILD_NUMBER"             --dart-define=MOONFIN_FORCE_TV=true             --dart-define=DISTRIBUTION_CHANNEL=android_tv_apk
           cp build/app/outputs/flutter-apk/app-androidtv-release.apk             "MoonfinREC_AndroidTV_v${TV_VERSION}.apk"
 
+      - name: Verify in-place REC upgrade and signing identity
+        env:
+          EXPECTED_CERT_SHA256: DA87543C1F1DD8CA6CBC13890A5D54A2E0995D78A8AD282808D4E4D94AC9B099
+        run: |
+          set -eu
+          APK="MoonfinREC_AndroidTV_v${TV_VERSION:-2.7.0}.apk"
+          test -s "$APK"
+          SDK_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          BUILD_TOOLS=$(find "$SDK_DIR/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | tee apk-identity.txt
+          grep -F "package: name='org.moonfin.androidtv.rec'" apk-identity.txt
+          grep -F "versionCode='2000027'" apk-identity.txt
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee apk-signature.txt
+          grep -Fi "$EXPECTED_CERT_SHA256" apk-signature.txt
+
       - uses: actions/upload-artifact@v4
-        if: github.ref == 'refs/heads/moonfin-rec-2.7'
+        if: contains(fromJSON('["refs/heads/moonfin-rec-2.7","refs/heads/moonfin-rec-2.7-regression-fixes"]'), github.ref)
         with:
-          name: Moonfin-REC-2.7-AndroidTV
+          name: ${{ github.ref_name == 'moonfin-rec-2.7' && 'Moonfin-REC-2.7-AndroidTV' || 'Moonfin-REC-2.7-Validation-AndroidTV' }}
           path: MoonfinREC_AndroidTV_v*.apk
           if-no-files-found: error
