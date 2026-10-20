@@ -1388,6 +1388,9 @@ class Media3PlayerBackend extends PlayerBackend
       // through Media3/MediaCodec on Fire TV. Let Jellyfin transcode it while
       // preserving the normal bitrate and resolution preferences.
       supportsMpeg4: isAndroidTv ? false : PlatformDetection.supportsMpeg4,
+      // The stable 2.6 Android TV backend prefers fMP4 over MPEG-TS for
+      // Jellyfin transcodes; preserve that fallback for recorded TV.
+      preferFmp4Hls: true,
       maxResolutionAvcWidth: PlatformDetection.maxResolutionAvcWidth,
       maxResolutionAvcHeight: PlatformDetection.maxResolutionAvcHeight,
       maxResolutionHevcWidth: PlatformDetection.maxResolutionHevcWidth,
