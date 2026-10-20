@@ -1326,6 +1326,10 @@ class Media3PlayerBackend extends PlayerBackend
     final maxResolution = _prefs.get(UserPreferences.maxVideoResolution);
     final audioCapabilityProfile = _prefs.detectedAudioCapabilities;
 
+    final isAndroidTv =
+        PlatformDetection.isAndroid && PlatformDetection.isTV;
+    final hevcTranscodeAllowed = serverAllowsHevcTranscode();
+
     return DeviceProfileBuilder.build(
       maxBitrateMbps: maxBitrate,
       audioCapabilityProfile: audioCapabilityProfile,
@@ -1349,12 +1353,22 @@ class Media3PlayerBackend extends PlayerBackend
       assDirectPlay: _prefs.get(UserPreferences.assDirectPlay),
       supportsExternalPgsSubtitles: true,
       supportsAvc: PlatformDetection.supportsAvc,
-      supportsAvcHigh10: PlatformDetection.supportsAvcHigh10,
+      // Fire TV / Android TV MediaCodec is not reliable for AVC High10.
+      // Force that profile through Jellyfin instead of failing after audio
+      // has already started.
+      supportsAvcHigh10:
+          isAndroidTv ? false : PlatformDetection.supportsAvcHigh10,
       avcMainLevel: PlatformDetection.avcMainLevel,
-      avcHigh10Level: PlatformDetection.avcHigh10Level,
+      avcHigh10Level:
+          isAndroidTv ? 0 : PlatformDetection.avcHigh10Level,
       supportsHevc: PlatformDetection.supportsHevc,
       supportsHevcMain10: PlatformDetection.supportsHevcMain10,
-      transcodeHevcAllowed: serverAllowsHevcTranscode(),
+      transcodeHevcAllowed: hevcTranscodeAllowed,
+      preferHevcMain10ForAvcHigh10Transcode:
+          isAndroidTv &&
+          hevcTranscodeAllowed &&
+          PlatformDetection.supportsHevc &&
+          PlatformDetection.supportsHevcMain10,
       hevcMainLevel: PlatformDetection.hevcMainLevel,
       supportsHevcDolbyVision: PlatformDetection.supportsHevcDolbyVision,
       supportsHevcDolbyVisionEl: PlatformDetection.supportsHevcDolbyVisionEl,
@@ -1370,7 +1384,10 @@ class Media3PlayerBackend extends PlayerBackend
       // HDR10 and the HDR10+ gate has nothing left to protect here.
       rendersAv1DoviViaHdr10BaseLayer: true,
       supportsVc1: PlatformDetection.supportsVc1,
-      supportsMpeg4: PlatformDetection.supportsMpeg4,
+      // Legacy MPEG-4 Part 2 (XviD/DivX), especially in AVI, is unreliable
+      // through Media3/MediaCodec on Fire TV. Let Jellyfin transcode it while
+      // preserving the normal bitrate and resolution preferences.
+      supportsMpeg4: isAndroidTv ? false : PlatformDetection.supportsMpeg4,
       maxResolutionAvcWidth: PlatformDetection.maxResolutionAvcWidth,
       maxResolutionAvcHeight: PlatformDetection.maxResolutionAvcHeight,
       maxResolutionHevcWidth: PlatformDetection.maxResolutionHevcWidth,
