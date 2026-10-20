@@ -1,0 +1,78 @@
+name: Moonfin REC 2.7 Android TV
+
+on:
+  push:
+    branches: [moonfin-rec-2.7]
+    paths-ignore:
+      - '**.md'
+
+permissions:
+  contents: read
+
+jobs:
+  android-tv-rec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+
+      - name: Resolve dependencies and localization
+        run: |
+          flutter pub get
+          flutter gen-l10n
+
+      - name: Format and analyze Moonfin REC changes
+        run: |
+          dart format             lib/playback/device_profile_builder.dart             lib/playback/media3_player_backend.dart             lib/ui/screens/livetv/live_tv_player_screen.dart             lib/ui/screens/livetv/live_tv_recordings_screen.dart             lib/data/viewmodels/recordings_view_model.dart             lib/ui/screens/settings/settings_side_panel.dart             lib/util/live_tv_recording.dart             packages/server_core/lib/src/api/live_tv_api.dart             packages/server_jellyfin/lib/src/api/jellyfin_live_tv_api.dart             packages/server_emby/lib/src/api/emby_live_tv_api.dart             test/playback/device_profile_builder_test.dart             test/util/live_tv_recording_test.dart             test/data/viewmodels/recording_delete_test.dart
+          flutter analyze --no-fatal-infos --no-fatal-warnings             lib/playback/device_profile_builder.dart             lib/playback/media3_player_backend.dart             lib/ui/screens/livetv/live_tv_player_screen.dart             lib/ui/screens/livetv/live_tv_recordings_screen.dart             lib/data/viewmodels/recordings_view_model.dart             lib/ui/screens/settings/settings_side_panel.dart             lib/util/live_tv_recording.dart             packages/server_core/lib/src/api/live_tv_api.dart             packages/server_jellyfin/lib/src/api/jellyfin_live_tv_api.dart             packages/server_emby/lib/src/api/emby_live_tv_api.dart
+
+      - name: Test playback and recording behavior
+        run: |
+          flutter test             test/playback/device_profile_builder_test.dart             test/util/live_tv_recording_test.dart             test/data/viewmodels/recording_delete_test.dart             test/data/viewmodels/recording_image_url_test.dart             test/viewmodels/live_tv_guide_view_model_test.dart
+
+      - name: Test manual recording requests
+        run: |
+          (cd packages/server_jellyfin && flutter pub get && flutter test test/jellyfin_live_tv_api_test.dart)
+          (cd packages/server_emby && flutter pub get && flutter test test/emby_live_tv_api_test.dart)
+
+      - name: Set up persistent release signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_TYPE: ${{ secrets.ANDROID_KEYSTORE_TYPE }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$STORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "::error::Persistent Moonfin REC signing secrets are not configured."
+            exit 1
+          fi
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
+          cat > android/keystore.properties <<EOF
+          storeFile=../release.keystore
+          storeType=$STORE_TYPE
+          storePassword=$STORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+
+      - name: Build Android TV REC APK
+        run: |
+          TV_VERSION=$(grep '^  android_tv_version:' pubspec.yaml | awk '{print $2}')
+          TV_BUILD_NUMBER=$(grep '^  android_tv_build_number:' pubspec.yaml | awk '{print $2}')
+          flutter build apk --release             --flavor androidTv             --build-name "$TV_VERSION"             --build-number "$TV_BUILD_NUMBER"             --dart-define=MOONFIN_FORCE_TV=true             --dart-define=DISTRIBUTION_CHANNEL=android_tv_apk
+          cp build/app/outputs/flutter-apk/app-androidtv-release.apk             "MoonfinREC_AndroidTV_v${TV_VERSION}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Moonfin-REC-2.7-AndroidTV
+          path: MoonfinREC_AndroidTV_v*.apk
+          if-no-files-found: error
