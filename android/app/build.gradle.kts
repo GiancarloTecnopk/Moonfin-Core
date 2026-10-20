@@ -91,7 +91,7 @@ android {
         // saves (SRAM/EEPROM). Those are stored locally and are NOT backed up to
         // the server, so an uninstall can lose real game progress. A distinct id
         // installs alongside instead and touches nothing.
-        val testIdSuffix = System.getenv("MOONFIN_TEST_ID_SUFFIX").orEmpty()
+        val testIdSuffix = System.getenv("MOONFIN_TEST_ID_SUFFIX") ?: ".rec"
         val mobileAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
         val tvAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
         create("mobile") {
@@ -117,7 +117,7 @@ android {
             versionName = androidTvVersionName
             ndk { abiFilters += tvAbis }
             manifestPlaceholders["appName"] =
-                if (testIdSuffix.isEmpty()) baseAppName else "$baseAppName Test"
+                if (testIdSuffix == ".rec") "$baseAppName REC" else if (testIdSuffix.isEmpty()) baseAppName else "$baseAppName Test"
             // Impeller off by default on TV: the GLES fallback stutters on
             // TV-box GPUs. MoonfinApplication turns it on for boxes where it
             // runs on Vulkan.
