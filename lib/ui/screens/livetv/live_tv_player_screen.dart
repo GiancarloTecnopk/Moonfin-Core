@@ -2823,21 +2823,31 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
             onPressed: _showBitrateSelector,
           ),
           const SizedBox(width: AppSpacing.spaceSm),
-          _buildOverlayControlButton(
-            focusNode: PlatformDetection.isTV ? _tvRecordFocus : null,
-            icon: _recordingState?.seriesTimerId != null
-                ? Icons.fiber_smart_record
-                : Icons.fiber_manual_record,
-            iconColor: _channelRecording ||
-                    _recordingState?.isRecording == true ||
-                    _recordingState?.seriesTimerId != null
-                ? Colors.red
-                : Colors.white,
-            tooltip: _channelRecording || _recordingState?.timerId != null
-                ? l10n.cancelRecordingAction
-                : l10n.record,
-            onPressed: () => unawaited(_showRecordingDialog()),
-          ),
+          if (PlatformDetection.isTV)
+            TextButton.icon(
+              focusNode: _tvRecordFocus,
+              onPressed: _recordingActionInProgress
+                  ? null
+                  : () => unawaited(_showRecordingDialog()),
+              icon: Icon(
+                _channelRecording ? Icons.stop_circle_rounded : Icons.fiber_manual_record,
+                color: _channelRecording ? Colors.white : Colors.redAccent,
+              ),
+              label: Text(_channelRecording ? 'STOP REC' : 'REC'),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: _channelRecording ? Colors.red.shade700 : Colors.white24,
+              ),
+            )
+          else
+            _buildOverlayControlButton(
+              icon: _recordingState?.seriesTimerId != null
+                  ? Icons.fiber_smart_record
+                  : Icons.fiber_manual_record,
+              iconColor: _channelRecording ? Colors.red : Colors.white,
+              tooltip: _channelRecording ? l10n.cancelRecordingAction : l10n.record,
+              onPressed: () => unawaited(_showRecordingDialog()),
+            ),
           const SizedBox(width: AppSpacing.spaceSm),
           _buildOverlayControlButton(
             focusNode: PlatformDetection.isTV ? _tvZoomFocus : null,
