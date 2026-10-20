@@ -2351,7 +2351,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
       await backend.setZoomMode(
         switch (_zoomMode) {
           ZoomMode.fit => 'fit',
-          ZoomMode.autoCrop => 'crop',
+          ZoomMode.autoCrop => 'zoomToFill',
           ZoomMode.stretch => 'stretch',
         },
       );
@@ -2408,7 +2408,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
         videoOutput: 'gpu',
         zoomMode: switch (_zoomMode) {
           ZoomMode.fit => NativeVideoZoomMode.fit,
-          ZoomMode.autoCrop => NativeVideoZoomMode.crop,
+          ZoomMode.autoCrop => NativeVideoZoomMode.zoomToFill,
           ZoomMode.stretch => NativeVideoZoomMode.stretch,
         },
         hardwareDecodingEnabled: _prefs.get(UserPreferences.hardwareDecoding),
