@@ -798,7 +798,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
         // remux keeps the original codecs and arrives as HLS, which has the
         // live window a raw transport stream never had. Withdrawing both left
         // them with a transcode nobody asked for.
-        enableDirectStream: true,
+        enableDirectStream: allowDirect,
         // Keep transcoding available as a fallback so a failed direct-play
         // of the upstream URL recovers to the server transcode instead of
         // erroring.
