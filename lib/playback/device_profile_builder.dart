@@ -173,6 +173,9 @@ class DeviceProfileBuilder {
     // picture with working audio. Servers without fMP4 HLS fall through to
     // the TS profile and encode H264, which renders.
     bool hevcRequiresFmp4Hls = false,
+    // Restore 2.6 Media3's preference for fragmented MP4 HLS as the
+    // transcode fallback, without changing direct-play offers.
+    bool preferFmp4Hls = false,
     // Keeps DTS and MP2 out of both HLS transcode offers, since AVFoundation
     // decodes neither. The server copies a source track straight through
     // whenever its codec is on the offer, so leaving them there hands back a
@@ -429,9 +432,9 @@ class DeviceProfileBuilder {
       transcodingProfiles = <Map<String, dynamic>>[
         // The server takes the first profile it can satisfy, so the order
         // decides the container.
-        if (hevcRequiresFmp4Hls) fmp4VideoProfile,
+        if (hevcRequiresFmp4Hls || preferFmp4Hls) fmp4VideoProfile,
         tsVideoProfile,
-        if (!hevcRequiresFmp4Hls) fmp4VideoProfile,
+        if (!hevcRequiresFmp4Hls && !preferFmp4Hls) fmp4VideoProfile,
         <String, dynamic>{
           'Type': 'Audio',
           'Context': 'Streaming',
