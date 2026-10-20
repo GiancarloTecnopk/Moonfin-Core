@@ -158,6 +158,40 @@ class RecordingsViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  void clearFocusedItem() {
+    _focusedItem = null;
+    notifyListeners();
+  }
+
+  /// Deletes only a completed recording item. Scheduled timers are cancelled
+  /// through the timer API and must never reach this path.
+  Future<void> deleteRecording(RecordingItem item) async {
+    if (item.id.isEmpty ||
+        !_recordedItems.any((recording) => recording.id == item.id)) {
+      throw StateError('Not a recorded item');
+    }
+    await _client.itemsApi.deleteItem(item.id);
+
+    List<RecordingItem> withoutItem(List<RecordingItem> items) =>
+        items.where((recording) => recording.id != item.id).toList();
+
+    _recentRecordings = withoutItem(_recentRecordings);
+    _seriesRecordings = withoutItem(_seriesRecordings);
+    _movieRecordings = withoutItem(_movieRecordings);
+    _sportsRecordings = withoutItem(_sportsRecordings);
+    _kidsRecordings = withoutItem(_kidsRecordings);
+    if (_focusedItem?.id == item.id) _focusedItem = null;
+    notifyListeners();
+  }
+
+  Iterable<RecordingItem> get _recordedItems => <RecordingItem>[
+    ..._recentRecordings,
+    ..._seriesRecordings,
+    ..._movieRecordings,
+    ..._sportsRecordings,
+    ..._kidsRecordings,
+  ];
+
   Future<void> load() async {
     _state = RecordingsState.loading;
     notifyListeners();
