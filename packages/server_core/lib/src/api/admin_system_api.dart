@@ -6,8 +6,6 @@ abstract class AdminSystemApi {
   Future<Map<String, dynamic>> getNamedConfiguration(String key);
   Future<void> updateNamedConfiguration(String key, Map<String, dynamic> config);
   Future<StorageInfo> getStorageInfo();
-  /// Starts the server's Live TV guide refresh scheduled task.
-  Future<void> refreshLiveTvGuide();
   Future<void> restartServer();
   Future<void> shutdownServer();
   Future<List<LogFileInfo>> getLogFiles();
