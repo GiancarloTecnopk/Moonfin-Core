@@ -29,6 +29,7 @@ import '../../../util/clock_format.dart';
 import '../../../util/subtitle_track_logic.dart';
 import '../../../util/play_method_label.dart';
 import '../../../util/platform_detection.dart';
+import '../../../util/live_tv_recording.dart';
 import '../../../util/playback_time_label.dart';
 import '../../../util/player_edge_drag.dart';
 import '../../../util/system_ui.dart';
@@ -96,6 +97,11 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
   bool _infoVisible = true;
   Timer? _hideTimer;
   bool _isStopping = false;
+  final Map<String, String> _channelTimers = <String, String>{};
+  bool get _channelRecording => _channelTimers.containsKey(_currentChannel.id);
+  Timer? _recordingBlinkTimer;
+  bool _recordingBlinkOn = true;
+  ZoomMode _zoomMode = ZoomMode.fit;
   bool _isSwitching = false;
   bool _isGuidePickerOpen = false;
   final _guideBackController = LiveTvGuideBackController();
@@ -197,6 +203,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
   final _tvAudioFocus = FocusNode(debugLabel: 'LiveTvAudio');
   final _tvSubtitleFocus = FocusNode(debugLabel: 'LiveTvSubtitle');
   final _tvRecordFocus = FocusNode(debugLabel: 'LiveTvRecord');
+  final _tvZoomFocus = FocusNode(debugLabel: 'LiveTvZoom');
   final _tvBitrateFocus = FocusNode(debugLabel: 'LiveTvBitrate');
   final _tvPlaybackInfoFocus = FocusNode(debugLabel: 'LiveTvPlaybackInfo');
   final _tvSkipBackFocus = FocusNode(debugLabel: 'LiveTvSkipBack');
@@ -237,10 +244,12 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     );
     _currentIndex = widget.startIndex;
     _applyPlayerDisplayMode();
+    unawaited(_syncLiveTvZoom());
     _applySubtitleStyle();
     _prefs.addListener(_applySubtitleStyle);
     _backendSub = _manager.backendChangedStream.listen((backend) {
       if (!mounted) return;
+      unawaited(_syncLiveTvZoom());
       _applySubtitleStyle(force: true);
       _listenForPlayerTrackChanges();
       setState(() {});
@@ -266,6 +275,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     _tvAudioFocus.addListener(_onControlFocusChanged);
     _tvSubtitleFocus.addListener(_onControlFocusChanged);
     _tvRecordFocus.addListener(_onControlFocusChanged);
+    _tvZoomFocus.addListener(_onControlFocusChanged);
     _tvBitrateFocus.addListener(_onControlFocusChanged);
     _tvPlaybackInfoFocus.addListener(_onControlFocusChanged);
     _tvSkipBackFocus.addListener(_onControlFocusChanged);
@@ -281,6 +291,13 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     _playCurrentChannel();
     _scheduleHide();
     _startProgramRefresh();
+    _recordingBlinkTimer = Timer.periodic(
+      const Duration(milliseconds: 750),
+      (_) {
+        if (!mounted || !_channelRecording) return;
+        setState(() => _recordingBlinkOn = !_recordingBlinkOn);
+      },
+    );
 
     WidgetsBinding.instance.addObserver(this);
     if (PlatformDetection.isMobile) {
@@ -307,6 +324,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     _seekCommitTimer?.cancel();
     _rewindWindowSub?.cancel();
     _programRefreshTimer?.cancel();
+    _recordingBlinkTimer?.cancel();
     _backendSub?.cancel();
     _liveFailureSub?.cancel();
     _failureCardReconcilePlayingSub?.cancel();
@@ -347,6 +365,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     _tvAudioFocus.removeListener(_onControlFocusChanged);
     _tvSubtitleFocus.removeListener(_onControlFocusChanged);
     _tvRecordFocus.removeListener(_onControlFocusChanged);
+    _tvZoomFocus.removeListener(_onControlFocusChanged);
     _tvBitrateFocus.removeListener(_onControlFocusChanged);
     _tvPlaybackInfoFocus.removeListener(_onControlFocusChanged);
     _tvSkipBackFocus.removeListener(_onControlFocusChanged);
@@ -359,6 +378,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     _tvAudioFocus.dispose();
     _tvSubtitleFocus.dispose();
     _tvRecordFocus.dispose();
+    _tvZoomFocus.dispose();
     _tvBitrateFocus.dispose();
     _tvPlaybackInfoFocus.dispose();
     _tvSkipBackFocus.dispose();
@@ -928,10 +948,33 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     }
   }
 
+  Future<String?> _refreshChannelRecording(String channelId) async {
+    final response = await _client.liveTvApi.getTimers();
+    final id = activeChannelTimerId(
+      (response['Items'] as List?) ?? const [],
+      channelId,
+      DateTime.now(),
+    );
+    if (mounted && _currentChannel.id == channelId) {
+      setState(() {
+        if (id == null) {
+          _channelTimers.remove(channelId);
+          _recordingBlinkOn = true;
+        } else {
+          _channelTimers[channelId] = id;
+        }
+      });
+    }
+    return id;
+  }
+
   Future<bool> _fetchCurrentProgram({bool withRecording = true}) async {
     final channelId = _currentChannel.id;
     final revision = ++_programRequestRevision;
     try {
+      try {
+        await _refreshChannelRecording(channelId);
+      } catch (_) {}
       final now = DateTime.now();
       final response = await _client.liveTvApi.getGuide(
         startDate: now.subtract(const Duration(minutes: 30)),
@@ -1048,16 +1091,70 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
   Future<void> _showRecordingDialog() async {
     if (_recordingActionInProgress || _isSwitching || _isStopping) return;
     final l10n = AppLocalizations.of(context);
+    final channel = _currentChannel;
     _recordingActionInProgress = true;
     _hideTimer?.cancel();
     String? message;
     try {
+      String? channelTimerId;
+      try {
+        channelTimerId = await _refreshChannelRecording(channel.id);
+      } catch (_) {}
+
       final refreshed = await _fetchCurrentProgram();
-      if (!mounted || _isStopping) return;
-      if (!refreshed || !_canRecordCurrentProgram || _recordingState == null) {
-        message = l10n.failedToLoadRecordings;
+      if (!mounted || _isStopping || _currentChannel.id != channel.id) return;
+
+      // A timer created without EPG has no ProgramId. If one is active on the
+      // tuned channel, REC behaves as STOP REC even if guide data later appears.
+      if (channelTimerId != null && _recordingState?.timerId == null) {
+        await _client.liveTvApi.cancelTimer(channelTimerId);
+        message = l10n.recordingCancelled;
+        await _refreshChannelRecording(channel.id);
         return;
       }
+
+      if (!refreshed || !_canRecordCurrentProgram || _recordingState == null) {
+        final minutes = await showDialog<int>(
+          context: context,
+          builder: (dialogContext) => SimpleDialog(
+            title: Text(l10n.manualRecordingWithoutEpg),
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                child: Text(l10n.chooseRecordingDuration),
+              ),
+              for (final duration in const [30, 60, 120, 180])
+                TextButton(
+                  autofocus: duration == 60,
+                  onPressed: () => Navigator.of(dialogContext).pop(duration),
+                  child: Text(l10n.recordingMinutes(duration)),
+                ),
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: Text(l10n.cancel),
+              ),
+            ],
+          ),
+        );
+        if (!mounted ||
+            minutes == null ||
+            _isStopping ||
+            _currentChannel.id != channel.id) {
+          return;
+        }
+        final now = DateTime.now();
+        await _client.liveTvApi.createChannelTimer(
+          channelId: channel.id,
+          name: channel.name,
+          startDate: now,
+          endDate: now.add(Duration(minutes: minutes)),
+        );
+        message = l10n.programSetToRecord;
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        await _refreshChannelRecording(channel.id);
+        return;
+      }
+
       final program = _currentProgram!;
       final recording = _recordingState!;
       final action = await showLiveTvRecordingDialog(
@@ -1111,14 +1208,17 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
             l10n.failedToCancelSeriesRecording,
         };
       }
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      await _refreshChannelRecording(channel.id);
       await _fetchCurrentProgram();
     } finally {
       _recordingActionInProgress = false;
       if (mounted && !_isStopping) {
         _suppressBackNavigation();
         if (message != null) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text(message)));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message)),
+          );
         }
         _scheduleHide();
       }
@@ -1147,6 +1247,11 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     _recordingRefreshInProgress = true;
     try {
       final timers = await _client.liveTvApi.getTimers();
+      final channelTimerId = activeChannelTimerId(
+        (timers['Items'] as List?) ?? const [],
+        program.channelId,
+        DateTime.now(),
+      );
       if (!mounted ||
           _recordingActionInProgress ||
           revision != _programRequestRevision ||
@@ -1159,6 +1264,12 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
           program.rawData,
           (timers['Items'] as List?) ?? const [],
         );
+        if (channelTimerId == null) {
+          _channelTimers.remove(program.channelId);
+          _recordingBlinkOn = true;
+        } else {
+          _channelTimers[program.channelId] = channelTimerId;
+        }
       });
     } catch (_) {
     } finally {
@@ -1195,7 +1306,8 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     if (_streamsOfType('Audio').length > 1) _tvAudioFocus,
     if (_hasSubtitleChoices) _tvSubtitleFocus,
     _tvBitrateFocus,
-    if (_canRecordCurrentProgram) _tvRecordFocus,
+    _tvRecordFocus,
+    _tvZoomFocus,
     _tvPlaybackInfoFocus,
   ];
 
@@ -2150,6 +2262,32 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
                   if (PlatformDetection.isMobile) _buildVolumeOverlay(),
                   if (_isGuidePickerOpen) _buildGuideOverlay(),
                   if (_isCarouselOpen) _buildChannelCarouselOverlay(),
+                  if (_channelRecording)
+                    Positioned(
+                      top: 26,
+                      right: 30,
+                      child: IgnorePointer(
+                        child: AnimatedOpacity(
+                          opacity: _recordingBlinkOn ? 1.0 : 0.18,
+                          duration: const Duration(milliseconds: 220),
+                          child: Container(
+                            width: 14,
+                            height: 14,
+                            decoration: const BoxDecoration(
+                              color: Colors.red,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Color(0x99000000),
+                                  blurRadius: 5,
+                                  spreadRadius: 1,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   if (_infoVisible &&
                       !_isGuidePickerOpen &&
                       !_isCarouselOpen) ...[
@@ -2194,9 +2332,56 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     );
   }
 
+  BoxFit get _liveTvFit => switch (_zoomMode) {
+    ZoomMode.fit => BoxFit.contain,
+    ZoomMode.autoCrop => BoxFit.cover,
+    ZoomMode.stretch => BoxFit.fill,
+  };
+
+  String get _liveTvZoomLabel => switch (_zoomMode) {
+    ZoomMode.fit => 'FIT',
+    ZoomMode.autoCrop => 'CROP',
+    ZoomMode.stretch => 'STRETCH',
+  };
+
+  Future<void> _syncLiveTvZoom() async {
+    final backend = _activeMedia3Backend;
+    if (backend == null) return;
+    try {
+      await backend.setZoomMode(
+        switch (_zoomMode) {
+          ZoomMode.fit => 'fit',
+          ZoomMode.autoCrop => 'crop',
+          ZoomMode.stretch => 'stretch',
+        },
+      );
+    } catch (error) {
+      GetIt.instance<LogService>().log(
+        LogCategory.playback,
+        'Live TV zoom: $error',
+        level: LogLevel.warning,
+      );
+    }
+  }
+
+  void _cycleLiveTvZoom() {
+    setState(() {
+      _zoomMode =
+          ZoomMode.values[(_zoomMode.index + 1) % ZoomMode.values.length];
+    });
+    unawaited(_syncLiveTvZoom());
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Formato video: $_liveTvZoomLabel'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+    _scheduleHide();
+  }
+
   Widget _buildVideoChild() {
     if (PlatformDetection.isIOS || PlatformDetection.isMacOS) {
-      return const AetherVideoView();
+      return AetherVideoView(zoomMode: _zoomMode.name);
     }
 
     final prefersMedia3 =
@@ -2209,7 +2394,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
 
     final htmlBackend = _activeHtmlVideoBackend;
     if (htmlBackend != null) {
-      return htmlBackend.buildView(fit: BoxFit.contain);
+      return htmlBackend.buildView(fit: _liveTvFit);
     }
 
     final mediaKitBackend = _activeMediaKitBackend ?? _backend;
@@ -2221,6 +2406,11 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
         player: mediaKitBackend.player,
         fill: Colors.black,
         videoOutput: 'gpu',
+        zoomMode: switch (_zoomMode) {
+          ZoomMode.fit => NativeVideoZoomMode.fit,
+          ZoomMode.autoCrop => NativeVideoZoomMode.crop,
+          ZoomMode.stretch => NativeVideoZoomMode.stretch,
+        },
         hardwareDecodingEnabled: _prefs.get(UserPreferences.hardwareDecoding),
       );
     }
@@ -2233,7 +2423,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     return Video(
       controller: controller,
       controls: NoVideoControls,
-      fit: BoxFit.contain,
+      fit: _liveTvFit,
       fill: Colors.black,
       pauseUponEnteringBackgroundMode: false,
       subtitleViewConfiguration: _buildSubtitleConfig(),
@@ -2632,23 +2822,29 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
             tooltip: l10n.bitrate,
             onPressed: _showBitrateSelector,
           ),
-          if (_canRecordCurrentProgram) ...[
-            const SizedBox(width: AppSpacing.spaceSm),
-            _buildOverlayControlButton(
-              focusNode: PlatformDetection.isTV ? _tvRecordFocus : null,
-              icon: _recordingState?.seriesTimerId != null
-                  ? Icons.fiber_smart_record
-                  : Icons.fiber_manual_record,
-              iconColor: _recordingState?.isRecording == true ||
-                      _recordingState?.seriesTimerId != null
-                  ? Colors.red
-                  : Colors.white,
-              tooltip: _recordingState?.timerId != null
-                  ? l10n.cancelRecordingAction
-                  : l10n.record,
-              onPressed: () => unawaited(_showRecordingDialog()),
-            ),
-          ],
+          const SizedBox(width: AppSpacing.spaceSm),
+          _buildOverlayControlButton(
+            focusNode: PlatformDetection.isTV ? _tvRecordFocus : null,
+            icon: _recordingState?.seriesTimerId != null
+                ? Icons.fiber_smart_record
+                : Icons.fiber_manual_record,
+            iconColor: _channelRecording ||
+                    _recordingState?.isRecording == true ||
+                    _recordingState?.seriesTimerId != null
+                ? Colors.red
+                : Colors.white,
+            tooltip: _channelRecording || _recordingState?.timerId != null
+                ? l10n.cancelRecordingAction
+                : l10n.record,
+            onPressed: () => unawaited(_showRecordingDialog()),
+          ),
+          const SizedBox(width: AppSpacing.spaceSm),
+          _buildOverlayControlButton(
+            focusNode: PlatformDetection.isTV ? _tvZoomFocus : null,
+            icon: Icons.aspect_ratio_rounded,
+            tooltip: _liveTvZoomLabel,
+            onPressed: _cycleLiveTvZoom,
+          ),
           const SizedBox(width: AppSpacing.spaceSm),
           _buildOverlayControlButton(
             focusNode: PlatformDetection.isTV ? _tvPlaybackInfoFocus : null,
