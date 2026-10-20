@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Moonfin REC launcher branding: blue crescent, active red REC indicator. -->
+    <path android:fillColor="#10263E"
+        android:pathData="M54,3 C82,3 105,26 105,54 C105,82 82,105 54,105 C26,105 3,82 3,54 C3,26 26,3 54,3 Z"/>
+    <path android:fillColor="#46C8EF"
+        android:pathData="M63,14 C42,13 22,31 22,53 C22,75 40,93 62,93 C70,93 79,90 84,84 C62,87 42,72 42,52 C42,33 49,23 63,14 Z"/>
+    <path android:fillColor="#ED333B"
+        android:pathData="M78,19 C85,19 91,25 91,32 C91,39 85,45 78,45 C71,45 65,39 65,32 C65,25 71,19 78,19 Z"/>
+    <!-- Label strokes use vector paths so Android TV does not depend on a font. -->
+    <path android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M51,64 L51,83 M51,64 L59,64 Q66,64 66,70 Q66,75 59,75 L51,75 M59,75 L66,83 M71,64 L71,83 M71,64 L82,64 M71,73 L81,73 M71,83 L82,83 M95,65 Q89,62 86,69 Q83,76 88,82 Q91,85 96,82"/>
+</vector>
