@@ -1,9 +1,9 @@
-name: Moonfin REC 2.7 Android TV Signed
+name: Moonfin REC 2.7.1 Android TV Signed
 
 on:
   workflow_dispatch:
   push:
-    branches: [moonfin-rec-2.7]
+    branches: [moonfin-rec-2.7.1-fix]
     paths-ignore:
       - '**.md'
 
@@ -74,6 +74,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Moonfin-REC-2.7-AndroidTV
+          name: Moonfin-REC-2.7.1-AndroidTV
           path: MoonfinREC_AndroidTV_v*.apk
           if-no-files-found: error
