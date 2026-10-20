@@ -1108,7 +1108,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
       // tuned channel, REC behaves as STOP REC even if guide data later appears.
       if (channelTimerId != null && _recordingState?.timerId == null) {
         await _client.liveTvApi.cancelTimer(channelTimerId);
-        message = l10n.recordingCancelled;
+        message = 'Registrazione interrotta';
         await _refreshChannelRecording(channel.id);
         return;
       }
@@ -1189,7 +1189,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
             message = l10n.seriesSetToRecord;
           case LiveTvRecordingAction.cancelProgram:
             await _client.liveTvApi.cancelTimer(recording.timerId!);
-            message = l10n.recordingCancelled;
+            message = recording.isRecording ? 'Registrazione interrotta' : l10n.recordingCancelled;
           case LiveTvRecordingAction.cancelSeries:
             await _client.liveTvApi.cancelSeriesTimer(recording.seriesTimerId!);
             message = l10n.seriesRecordingCancelled;
