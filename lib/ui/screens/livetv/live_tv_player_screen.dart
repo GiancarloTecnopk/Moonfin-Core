@@ -1088,6 +1088,80 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
         now.isBefore(program.endDate);
   }
 
+  // Android TV: one press starts or stops the current recording, as in 2.6.
+  Future<void> _toggleTvRecording() async {
+    if (_recordingActionInProgress || _isSwitching || _isStopping) return;
+    final channel = _currentChannel;
+    _recordingActionInProgress = true;
+    String? message;
+    try {
+      final timerId = await _refreshChannelRecording(channel.id);
+      if (!mounted || _isStopping || _currentChannel.id != channel.id) return;
+      if (timerId != null) {
+        await _client.liveTvApi.cancelTimer(timerId);
+        message = 'Registrazione interrotta';
+      } else {
+        await _fetchCurrentProgram();
+        if (!mounted || _isStopping || _currentChannel.id != channel.id) return;
+        final program = _currentProgram;
+        if (program != null && program.isLive && program.id.isNotEmpty) {
+          await _client.liveTvApi.createTimer(program.id);
+          message = 'Registrazione avviata';
+        } else {
+          final minutes = await showDialog<int>(
+            context: context,
+            builder: (dialogContext) => SimpleDialog(
+              title: const Text('Registrazione senza EPG'),
+              children: [
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                  child: Text('Scegli la durata della registrazione'),
+                ),
+                for (final duration in const [30, 60, 120, 180])
+                  TextButton(
+                    autofocus: duration == 60,
+                    onPressed: () => Navigator.of(dialogContext).pop(duration),
+                    child: Text('$duration minuti'),
+                  ),
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Annulla'),
+                ),
+              ],
+            ),
+          );
+          if (!mounted || minutes == null || _isStopping ||
+              _currentChannel.id != channel.id) return;
+          final now = DateTime.now();
+          await _client.liveTvApi.createChannelTimer(
+            channelId: channel.id,
+            name: channel.name,
+            startDate: now,
+            endDate: now.add(Duration(minutes: minutes)),
+          );
+          message = 'Registrazione avviata';
+        }
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      if (mounted && !_isStopping && _currentChannel.id == channel.id) {
+        await _refreshChannelRecording(channel.id);
+        await _fetchCurrentProgram();
+      }
+    } catch (_) {
+      message = 'Impossibile modificare la registrazione';
+    } finally {
+      _recordingActionInProgress = false;
+      if (mounted && !_isStopping) {
+        if (message != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message)),
+          );
+        }
+        _scheduleHide();
+      }
+    }
+  }
+
   Future<void> _showRecordingDialog() async {
     if (_recordingActionInProgress || _isSwitching || _isStopping) return;
     final l10n = AppLocalizations.of(context);
@@ -2828,7 +2902,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
               focusNode: _tvRecordFocus,
               onPressed: _recordingActionInProgress
                   ? null
-                  : () => unawaited(_showRecordingDialog()),
+                  : () => unawaited(_toggleTvRecording()),
               icon: Icon(
                 _channelRecording ? Icons.stop_circle_rounded : Icons.fiber_manual_record,
                 color: _channelRecording ? Colors.white : Colors.redAccent,
