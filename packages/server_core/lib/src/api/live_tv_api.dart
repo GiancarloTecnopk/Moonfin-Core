@@ -60,6 +60,14 @@ abstract class LiveTvApi {
 
   Future<void> createTimer(String programId);
 
+  /// Records a channel for a fixed interval, including channels without EPG.
+  Future<void> createChannelTimer({
+    required String channelId,
+    required String name,
+    required DateTime startDate,
+    required DateTime endDate,
+  });
+
   /// Records every showing of a program's series, not just this one.
   Future<void> createSeriesTimer(String programId);
 
