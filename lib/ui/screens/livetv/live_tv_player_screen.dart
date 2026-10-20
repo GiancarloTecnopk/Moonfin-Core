@@ -2836,6 +2836,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
             tooltip: _channelRecording || _recordingState?.timerId != null
                 ? l10n.cancelRecordingAction
                 : l10n.record,
+            label: _channelRecording ? 'STOP REC' : 'REC',
             onPressed: () => unawaited(_showRecordingDialog()),
           ),
           const SizedBox(width: AppSpacing.spaceSm),
@@ -3024,6 +3025,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     required String tooltip,
     required VoidCallback onPressed,
     Color iconColor = Colors.white,
+    String? label,
   }) {
     if (PlatformDetection.isTV) {
       return _LiveTvRoundControlButton(
@@ -3032,6 +3034,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
         tooltip: tooltip,
         icon: icon,
         iconColor: iconColor,
+        label: label,
       );
     }
 
@@ -3064,6 +3067,7 @@ class _LiveTvRoundControlButton extends StatefulWidget {
   final String tooltip;
   final IconData icon;
   final Color iconColor;
+  final String? label;
 
   const _LiveTvRoundControlButton({
     required this.onPressed,
@@ -3071,6 +3075,7 @@ class _LiveTvRoundControlButton extends StatefulWidget {
     required this.icon,
     this.focusNode,
     this.iconColor = Colors.white,
+    this.label,
   });
 
   @override
@@ -3157,10 +3162,10 @@ class _LiveTvRoundControlButtonState extends State<_LiveTvRoundControlButton> {
           onTap: widget.onPressed,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 140),
-            width: 52,
+            width: widget.label == null ? 52 : 94,
             height: 52,
             decoration: BoxDecoration(
-              shape: BoxShape.circle,
+              borderRadius: BorderRadius.circular(26),
               color: _focused
                   ? AppColorScheme.accent.withValues(alpha: 0.30)
                   : Colors.white.withValues(alpha: 0.14),
@@ -3173,7 +3178,9 @@ class _LiveTvRoundControlButtonState extends State<_LiveTvRoundControlButton> {
                 ),
               ),
             ),
-            child: Icon(widget.icon, size: 24, color: widget.iconColor),
+            child: widget.label == null
+                ? Icon(widget.icon, size: 24, color: widget.iconColor)
+                : Center(child: Text(widget.label!, style: TextStyle(color: widget.iconColor, fontWeight: FontWeight.bold, fontSize: 13))),
           ),
         ),
       ),
