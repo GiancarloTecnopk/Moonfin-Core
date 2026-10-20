@@ -27,3 +27,19 @@ String? activeChannelTimerId(
   }
   return null;
 }
+
+
+/// One-press REC matches the stable 2.6 Android TV behavior. Existing timers
+/// still go through the stop/cancel flow and scheduled series retain their menu.
+bool shouldInstantRecordCurrentProgram({
+  required bool isTv,
+  required bool hasLiveProgram,
+  required bool canRecordProgram,
+  required bool hasProgramTimer,
+  required bool hasSeriesTimer,
+}) =>
+    isTv &&
+    hasLiveProgram &&
+    canRecordProgram &&
+    !hasProgramTimer &&
+    !hasSeriesTimer;
