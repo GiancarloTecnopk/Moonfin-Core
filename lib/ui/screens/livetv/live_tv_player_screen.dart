@@ -1106,10 +1106,14 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
 
       // A timer created without EPG has no ProgramId. If one is active on the
       // tuned channel, REC behaves as STOP REC even if guide data later appears.
-      if (channelTimerId != null &&
+      final inProgressTimerId = channelTimerId ??
+          (_recordingState?.isRecording == true
+              ? _recordingState?.timerId
+              : null);
+      if (inProgressTimerId != null &&
           (_recordingState?.timerId == null ||
               _recordingState?.isRecording == true)) {
-        await _client.liveTvApi.cancelTimer(channelTimerId);
+        await _client.liveTvApi.cancelTimer(inProgressTimerId);
         message = 'Registrazione interrotta';
         await _refreshChannelRecording(channel.id);
         return;
