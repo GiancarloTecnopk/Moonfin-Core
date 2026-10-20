@@ -43,54 +43,6 @@ class _LibrariesCategoryScreen extends StatelessWidget {
               ),
             ],
           ),
-          _SectionHeader('Gestione server Jellyfin'),
-          adaptiveListSection(
-            children: [
-              _TvSettingsListTile(
-                leading: const Icon(Icons.calendar_month_outlined),
-                title: const Text('Aggiorna fonti EPG Jellyfin'),
-                subtitle: const Text('Avvia l’aggiornamento della guida TV sul server'),
-                onTap: () async {
-                  final confirmed = await showDialog<bool>(
-                    context: context,
-                    builder: (dialogContext) => AlertDialog(
-                      title: const Text('Aggiornare la guida EPG?'),
-                      content: const Text(
-                        'Jellyfin aggiornerà le fonti EPG configurate sul server. '
-                        'Lo script esterno sul NAS non verrà eseguito.',
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(dialogContext, false),
-                          child: const Text('Annulla'),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(dialogContext, true),
-                          child: const Text('Aggiorna'),
-                        ),
-                      ],
-                    ),
-                  );
-                  if (confirmed != true || !context.mounted) return;
-                  try {
-                    await GetIt.instance<MediaServerClient>()
-                        .adminSystemApi.refreshLiveTvGuide();
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Aggiornamento EPG avviato su Jellyfin'),
-                      ),
-                    );
-                  } catch (error) {
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Aggiornamento EPG non avviato: $error')),
-                    );
-                  }
-                },
-              ),
-            ],
-          ),
           _SectionHeader(l10n.libraryView),
           adaptiveListSection(
             children: [
