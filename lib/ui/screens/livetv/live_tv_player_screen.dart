@@ -1106,9 +1106,11 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
 
       // A timer created without EPG has no ProgramId. If one is active on the
       // tuned channel, REC behaves as STOP REC even if guide data later appears.
-      if (channelTimerId != null && _recordingState?.timerId == null) {
+      if (channelTimerId != null &&
+          (_recordingState?.timerId == null ||
+              _recordingState?.isRecording == true)) {
         await _client.liveTvApi.cancelTimer(channelTimerId);
-        message = l10n.recordingCancelled;
+        message = 'Registrazione interrotta';
         await _refreshChannelRecording(channel.id);
         return;
       }
@@ -1189,7 +1191,9 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
             message = l10n.seriesSetToRecord;
           case LiveTvRecordingAction.cancelProgram:
             await _client.liveTvApi.cancelTimer(recording.timerId!);
-            message = l10n.recordingCancelled;
+            message = recording.isRecording
+                ? 'Registrazione interrotta'
+                : l10n.recordingCancelled;
           case LiveTvRecordingAction.cancelSeries:
             await _client.liveTvApi.cancelSeriesTimer(recording.seriesTimerId!);
             message = l10n.seriesRecordingCancelled;
@@ -2833,10 +2837,12 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
                     _recordingState?.seriesTimerId != null
                 ? Colors.red
                 : Colors.white,
-            tooltip: _channelRecording || _recordingState?.timerId != null
-                ? l10n.cancelRecordingAction
+            tooltip: _channelRecording || _recordingState?.isRecording == true
+                ? 'STOP REC'
                 : l10n.record,
-            label: _channelRecording ? 'STOP REC' : 'REC',
+            label: _channelRecording || _recordingState?.isRecording == true
+                ? 'STOP REC'
+                : 'REC',
             onPressed: () => unawaited(_showRecordingDialog()),
           ),
           const SizedBox(width: AppSpacing.spaceSm),
