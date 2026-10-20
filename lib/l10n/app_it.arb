@@ -10093,5 +10093,66 @@
                 "type": "String"
             }
         }
+    },
+    "refreshJellyfinLibraries": "Aggiorna librerie Jellyfin",
+    "@refreshJellyfinLibraries": {
+        "description": "Comando principale che avvia la scansione completa delle librerie Jellyfin"
+    },
+    "refreshJellyfinLibrariesDescription": "Scansiona le librerie senza aprire l'interfaccia web di Jellyfin",
+    "@refreshJellyfinLibrariesDescription": {
+        "description": "Descrizione del comando di aggiornamento librerie Jellyfin"
+    },
+    "jellyfinLibraryRefreshStarted": "Scansione librerie Jellyfin avviata",
+    "@jellyfinLibraryRefreshStarted": {
+        "description": "Conferma dell'avvio della scansione librerie Jellyfin"
+    },
+    "jellyfinLibraryRefreshFailed": "Impossibile avviare la scansione Jellyfin: {error}",
+    "@jellyfinLibraryRefreshFailed": {
+        "description": "Errore nell'avvio della scansione librerie Jellyfin",
+        "placeholders": {
+            "error": { "type": "String" }
+        }
+    },
+    "refreshEpg": "Aggiorna EPG",
+    "@refreshEpg": {
+        "description": "Comando principale che avvia l'aggiornamento della guida TV Jellyfin"
+    },
+    "refreshEpgDescription": "Ricarica i dati della guida TV in Jellyfin",
+    "@refreshEpgDescription": {
+        "description": "Descrizione del comando di aggiornamento EPG"
+    },
+    "epgRefreshFailed": "Impossibile avviare l'aggiornamento EPG: {error}",
+    "@epgRefreshFailed": {
+        "description": "Errore nell'avvio dell'aggiornamento EPG",
+        "placeholders": {
+            "error": { "type": "String" }
+        }
+    },
+    "pleaseWait": "Attendere…",
+    "@pleaseWait": {
+        "description": "Etichetta breve mostrata durante un'operazione"
+    },
+    "manualRecordingWithoutEpg": "Registrazione senza EPG",
+    "@manualRecordingWithoutEpg": {
+        "description": "Titolo della registrazione a durata fissa quando manca la guida TV"
+    },
+    "chooseRecordingDuration": "Scegli la durata della registrazione",
+    "@chooseRecordingDuration": {
+        "description": "Richiesta durata per la registrazione Live TV senza EPG"
+    },
+    "recordingMinutes": "{count} minuti",
+    "@recordingMinutes": {
+        "description": "Durata della registrazione in minuti",
+        "placeholders": {
+            "count": { "type": "int" }
+        }
+    },
+    "deleteRecordingTitle": "Elimina registrazione",
+    "@deleteRecordingTitle": {
+        "description": "Titolo della conferma per eliminare una registrazione completata"
+    },
+    "recordingDeleted": "Registrazione eliminata",
+    "@recordingDeleted": {
+        "description": "Conferma dopo l'eliminazione di una registrazione completata"
     }
 }
