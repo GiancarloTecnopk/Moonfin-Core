@@ -3164,7 +3164,9 @@ class _LiveTvRoundControlButtonState extends State<_LiveTvRoundControlButton> {
           // focusable InkWell would add a second, invisible focus node that
           // breaks the OSD's manual arrow navigation.
           canRequestFocus: false,
-          customBorder: const CircleBorder(),
+          customBorder: widget.label == null
+              ? const CircleBorder()
+              : RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
           onTap: widget.onPressed,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 140),
