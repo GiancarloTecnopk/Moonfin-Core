@@ -23,9 +23,13 @@ jobs:
           flutter-version: '3.47.2'
       - name: Resolve dependencies
         run: flutter pub get
+      - name: Set up Gradle 9.3.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
       - name: Run Media3 DTS device policy tests
         working-directory: android
-        run: ./gradlew :moonfin_native_video:testDebugUnitTest --no-daemon --stacktrace
+        run: gradle :moonfin_native_video:testDebugUnitTest --no-daemon --stacktrace
       - name: Verify Flutter Media3 wiring
         run: |
           flutter test test/playback/media3_decoder_preferences_test.dart
