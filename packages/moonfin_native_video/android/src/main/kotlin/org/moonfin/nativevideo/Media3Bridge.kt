@@ -1,6 +1,7 @@
 package org.moonfin.nativevideo
 
 import android.content.Context
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import io.flutter.plugin.common.EventChannel
@@ -354,6 +355,16 @@ object Media3Bridge {
                     ?.filter { it in AudioPassthroughPolicy.KNOWN_CODECS }
                     ?.toSet()
                     ?: emptySet()
+            // Cube 3 + DTS bitstream can desynchronize AudioTrack and the video
+            // clock. Preserve AC-3/E-AC-3 bitstreaming; decode DTS to PCM in
+            // AUTO mode only. MANUAL keeps the user's explicit codec choices.
+            val cube3DtsPolicy = FireTvCube3DtsWorkaround.apply(
+                passthroughMode,
+                passthroughCodecs,
+                Build.MODEL,
+            )
+            passthroughMode = cube3DtsPolicy.mode
+            passthroughCodecs = cube3DtsPolicy.codecs
             passthroughOutput =
                 (args?.get("passthroughOutput")?.toString()?.trim()?.lowercase())
                     .takeIf { it == "platform" || it == "iec" }
