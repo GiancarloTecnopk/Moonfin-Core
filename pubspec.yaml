@@ -4,8 +4,8 @@ publish_to: 'none'
 version: 2.7.0+30000154
 
 moonfin:
-  android_tv_version: 2.7.0
-  android_tv_build_number: 2000027
+  android_tv_version: 2.7.1
+  android_tv_build_number: 2000028
   beta: false
   beta_number: 1
 

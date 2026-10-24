@@ -1,0 +1,101 @@
+name: Fire Cube 3 DTS Fix Verification
+
+on:
+  push:
+    branches:
+      - fix/fire-cube3-dts-stutter-20261024
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-dts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+      - name: Resolve dependencies
+        run: flutter pub get
+      - name: Set up Gradle 9.3.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+      - name: Run Media3 DTS device policy tests
+        working-directory: android
+        run: gradle :moonfin_native_video:testDebugUnitTest --no-daemon --stacktrace
+      - name: Verify Flutter Media3 wiring
+        run: |
+          flutter test test/playback/media3_decoder_preferences_test.dart
+          flutter analyze --no-fatal-infos --no-fatal-warnings lib/playback/media3_player_backend.dart
+
+      - name: Set up REC signing from existing release identity
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_TYPE: ${{ secrets.ANDROID_KEYSTORE_TYPE }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -eu
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$STORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "::error::Missing persistent Moonfin REC release signing secrets. Refusing unsigned build."
+            exit 1
+          fi
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
+          chmod 600 android/app/release.keystore
+          cat > android/keystore.properties <<EOF
+          storeFile=../release.keystore
+          storeType=$STORE_TYPE
+          storePassword=$STORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+          chmod 600 android/keystore.properties
+
+      - name: Build signed Moonfin REC 2.7.1 DTS trial APK
+        env:
+          MOONFIN_TEST_ID_SUFFIX: .rec
+        run: |
+          set -eu
+          TV_VERSION=$(awk '/^  android_tv_version:/{print $2}' pubspec.yaml)
+          TV_BUILD_NUMBER=$(awk '/^  android_tv_build_number:/{print $2}' pubspec.yaml)
+          test "$TV_VERSION" = "2.7.1"
+          test "$TV_BUILD_NUMBER" = "2000028"
+          flutter gen-l10n
+          flutter build apk --release --flavor androidTv \
+            --build-name "$TV_VERSION" --build-number "$TV_BUILD_NUMBER" \
+            --dart-define=MOONFIN_FORCE_TV=true \
+            --dart-define=DISTRIBUTION_CHANNEL=android_tv_apk
+          cp build/app/outputs/flutter-apk/app-androidtv-release.apk \
+            MoonfinREC_2.7.1_DTS_TEST_signed.apk
+
+      - name: Verify APK identity, upgrade version and SAME signing certificate
+        env:
+          EXPECTED_CERT_SHA256: DA87543C1F1DD8CA6CBC13890A5D54A2E0995D78A8AD282808D4E4D94AC9B099
+        run: |
+          set -eu
+          APK="MoonfinREC_2.7.1_DTS_TEST_signed.apk"
+          test -s "$APK"
+          SDK_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          BUILD_TOOLS=$(find "$SDK_DIR/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | tee dts-apk-identity.txt
+          grep -F "package: name='org.moonfin.androidtv.rec'" dts-apk-identity.txt
+          grep -F "versionCode='2000028'" dts-apk-identity.txt
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee dts-apk-signature.txt
+          grep -Fi "$EXPECTED_CERT_SHA256" dts-apk-signature.txt
+          echo "Verified REC package, upgraded version and original signing certificate." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish signed DTS test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoonfinREC-2.7.1-FireCube3-DTS-TEST-signed
+          path: MoonfinREC_2.7.1_DTS_TEST_signed.apk
+          if-no-files-found: error
+          retention-days: 14
