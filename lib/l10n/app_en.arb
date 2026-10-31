@@ -15500,5 +15500,30 @@
   "recordingDeleted": "Recording deleted",
   "@recordingDeleted": {
     "description": "Confirmation after a completed recording was deleted"
+  },
+  "codec": "Codec",
+  "@codec": {
+    "description": "Stream info label for codec"
+  },
+  "videoBitrate": "Video Bitrate",
+  "@videoBitrate": {
+    "description": "Stream info label for video bitrate"
+  },
+  "audioBitrate": "Audio Bitrate",
+  "@audioBitrate": {
+    "description": "Stream info label for audio bitrate"
+  },
+  "sampleRate": "Sample Rate",
+  "@sampleRate": {
+    "description": "Stream info label for audio sample rate"
+  },
+  "channelsCount": "{count}ch",
+  "@channelsCount": {
+    "description": "Audio channel count label",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   }
 }
