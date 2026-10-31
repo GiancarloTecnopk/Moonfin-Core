@@ -13,7 +13,7 @@
         tools:replace="android:required" />
 
     <application
-        android:icon="@drawable/ic_moonfin_rec"
+        android:icon="@drawable/moonfin_rec_launcher"
         tools:replace="android:icon">
         <meta-data
             android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
