@@ -12,15 +12,17 @@ import 'package:screen_brightness_platform_interface/screen_brightness_platform_
 import 'package:volume_controller/volume_controller.dart';
 
 import '../../../data/services/log_service.dart';
-import '../../../data/utils/video_range_label.dart';
 import '../../../playback/subtitle_style.dart';
 import '../../../playback/subtitle_view_config.dart';
+import '../../../playback/system_volume.dart';
 import '../../../data/models/aggregated_item.dart';
 import '../../../data/models/live_tv_recording_state.dart';
+import '../../../util/live_tv_recording.dart';
 import '../../../data/viewmodels/live_tv_guide_view_model.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../playback/html_video_backend.dart';
 import '../../../playback/media_kit_player_backend.dart';
+import '../../../playback/playback_info_sections.dart';
 import '../../../platform/pip_service.dart';
 import '../../../playback/media3_player_backend.dart';
 import '../../../preference/preference_constants.dart';
@@ -28,27 +30,23 @@ import '../../../preference/user_preferences.dart';
 import '../../../util/clock_format.dart';
 import '../../../util/subtitle_track_logic.dart';
 import '../../../util/platform_detection.dart';
-import '../../../util/live_tv_recording.dart';
 import '../../../util/playback_time_label.dart';
 import '../../../util/player_edge_drag.dart';
 import '../../../util/system_ui.dart';
 import '../../widgets/adaptive/sf_symbol.dart';
 import '../../widgets/aether_video_view.dart';
 import '../../widgets/playback/stream_info_dialog.dart';
+import '../../widgets/player_volume_control.dart';
 import '../../widgets/track_selector_dialog.dart';
 import '../../widgets/live_tv/channel_carousel_overlay.dart';
+import '../../widgets/live_tv/incomplete_recording.dart';
 import '../../widgets/live_tv/live_tv_recording_dialog.dart';
-import '../../widgets/live_tv/series_recording_dialog.dart';
-import '../../widgets/emby_premiere_dialog.dart';
-import '../../util/error_message.dart';
+import '../../widgets/live_tv/live_tv_recording_icon.dart';
 import 'channel_tune_observer.dart';
 import 'live_tv_guide_screen.dart';
 import '../../screensaver/screensaver_controller.dart';
 
 const _kGuideResizeDuration = Duration(milliseconds: 250);
-// PlaybackManager permits a 15-second ready wait and can retry once through a
-// server transcode. Leave enough room for both attempts plus their handoff.
-const _kChannelTuneTimeout = Duration(seconds: 35);
 
 class LiveTvPlayerScreen extends StatefulWidget {
   final List<GuideChannel> channels;
@@ -97,11 +95,6 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
   bool _infoVisible = true;
   Timer? _hideTimer;
   bool _isStopping = false;
-  final Map<String, String> _channelTimers = <String, String>{};
-  bool get _channelRecording => _channelTimers.containsKey(_currentChannel.id);
-  Timer? _recordingBlinkTimer;
-  bool _recordingBlinkOn = true;
-  ZoomMode _zoomMode = ZoomMode.fit;
   bool _isSwitching = false;
   bool _isGuidePickerOpen = false;
   final _guideBackController = LiveTvGuideBackController();
@@ -119,6 +112,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
 
   GuideProgram? _currentProgram;
   LiveTvRecordingState? _recordingState;
+  String? _activeChannelTimerId;
   bool _recordingActionInProgress = false;
   bool _recordingRefreshInProgress = false;
   int _programRequestRevision = 0;
@@ -179,6 +173,12 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
   bool _verticalDragIgnored = false;
   int _media3VolumeBoostLevel = 0;
 
+  // Desktop and web drive the player's own volume, from 0 to 100, instead of
+  // the system one.
+  double _playerVolume = 100;
+  double _volumeBeforeMute = 100;
+  Timer? _persistVolumeTimer;
+
   // Android Picture-in-Picture wiring. iOS Live TV PiP needs the separate
   // sample-buffer bridge and is not wired here.
   final _pipService = GetIt.instance<PipService>();
@@ -203,7 +203,6 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
   final _tvAudioFocus = FocusNode(debugLabel: 'LiveTvAudio');
   final _tvSubtitleFocus = FocusNode(debugLabel: 'LiveTvSubtitle');
   final _tvRecordFocus = FocusNode(debugLabel: 'LiveTvRecord');
-  final _tvZoomFocus = FocusNode(debugLabel: 'LiveTvZoom');
   final _tvBitrateFocus = FocusNode(debugLabel: 'LiveTvBitrate');
   final _tvPlaybackInfoFocus = FocusNode(debugLabel: 'LiveTvPlaybackInfo');
   final _tvSkipBackFocus = FocusNode(debugLabel: 'LiveTvSkipBack');
@@ -244,12 +243,12 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     );
     _currentIndex = widget.startIndex;
     _applyPlayerDisplayMode();
-    unawaited(_syncLiveTvZoom());
     _applySubtitleStyle();
     _prefs.addListener(_applySubtitleStyle);
     _backendSub = _manager.backendChangedStream.listen((backend) {
+      // A new backend starts at its own default, so it gets the level back.
+      if (_usesPlayerVolume) unawaited(backend.setVolume(_playerVolume));
       if (!mounted) return;
-      unawaited(_syncLiveTvZoom());
       _applySubtitleStyle(force: true);
       _listenForPlayerTrackChanges();
       setState(() {});
@@ -275,7 +274,6 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     _tvAudioFocus.addListener(_onControlFocusChanged);
     _tvSubtitleFocus.addListener(_onControlFocusChanged);
     _tvRecordFocus.addListener(_onControlFocusChanged);
-    _tvZoomFocus.addListener(_onControlFocusChanged);
     _tvBitrateFocus.addListener(_onControlFocusChanged);
     _tvPlaybackInfoFocus.addListener(_onControlFocusChanged);
     _tvSkipBackFocus.addListener(_onControlFocusChanged);
@@ -291,18 +289,13 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     _playCurrentChannel();
     _scheduleHide();
     _startProgramRefresh();
-    _recordingBlinkTimer = Timer.periodic(
-      const Duration(milliseconds: 750),
-      (_) {
-        if (!mounted || !_channelRecording) return;
-        setState(() => _recordingBlinkOn = !_recordingBlinkOn);
-      },
-    );
 
     WidgetsBinding.instance.addObserver(this);
     if (PlatformDetection.isMobile) {
       _initBrightness();
       _initSystemVolume();
+    } else if (_usesPlayerVolume) {
+      _initPlayerVolume();
     }
     if (PlatformDetection.isAndroid && !PlatformDetection.isTV) {
       _pipService.enableAutoPiP(true, owner: this);
@@ -324,7 +317,6 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     _seekCommitTimer?.cancel();
     _rewindWindowSub?.cancel();
     _programRefreshTimer?.cancel();
-    _recordingBlinkTimer?.cancel();
     _backendSub?.cancel();
     _liveFailureSub?.cancel();
     _failureCardReconcilePlayingSub?.cancel();
@@ -344,8 +336,12 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     if (PlatformDetection.isAndroid && !PlatformDetection.isTV) {
       _pipService.enableAutoPiP(false, owner: this);
     }
+    _volumeListenerSub?.cancel();
+    if (_persistVolumeTimer?.isActive ?? false) {
+      _persistVolumeTimer!.cancel();
+      unawaited(_prefs.set(UserPreferences.playerVolume, _playerVolume));
+    }
     if (PlatformDetection.isMobile) {
-      _volumeListenerSub?.cancel();
       VolumeController.instance.removeListener();
       _brightnessListenerSub?.cancel();
       Future.microtask(() async {
@@ -365,7 +361,6 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     _tvAudioFocus.removeListener(_onControlFocusChanged);
     _tvSubtitleFocus.removeListener(_onControlFocusChanged);
     _tvRecordFocus.removeListener(_onControlFocusChanged);
-    _tvZoomFocus.removeListener(_onControlFocusChanged);
     _tvBitrateFocus.removeListener(_onControlFocusChanged);
     _tvPlaybackInfoFocus.removeListener(_onControlFocusChanged);
     _tvSkipBackFocus.removeListener(_onControlFocusChanged);
@@ -378,7 +373,6 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     _tvAudioFocus.dispose();
     _tvSubtitleFocus.dispose();
     _tvRecordFocus.dispose();
-    _tvZoomFocus.dispose();
     _tvBitrateFocus.dispose();
     _tvPlaybackInfoFocus.dispose();
     _tvSkipBackFocus.dispose();
@@ -509,7 +503,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     final vc = VolumeController.instance;
     vc.showSystemUI = false;
     unawaited(_manager.backend?.setVolume(100.0));
-    _volumeListenerSub = vc.addListener((value) {
+    _volumeListenerSub = listenToSystemVolume((value) {
       if (mounted && (value - _systemVolume).abs() > 0.01) {
         setState(() => _systemVolume = value);
       }
@@ -518,7 +512,52 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
           _activeMedia3Backend != null) {
         unawaited(_setMedia3VolumeBoostLevel(0));
       }
-    }, fetchInitialVolume: true);
+    });
+  }
+
+  bool get _usesPlayerVolume =>
+      !PlatformDetection.isMobile && !PlatformDetection.isTV;
+
+  void _initPlayerVolume() {
+    _playerVolume = _prefs
+        .get(UserPreferences.playerVolume)
+        .clamp(0.0, 100.0)
+        .toDouble();
+    unawaited(_manager.backend?.setVolume(_playerVolume));
+    _manager.reportVolumeState(
+      volume: _playerVolume,
+      isMuted: _playerVolume <= 0,
+    );
+    // A session remote sets the level without coming through here.
+    _volumeListenerSub = _manager.volumeStream.listen((level) {
+      if (!mounted || (level - _playerVolume).abs() < 0.5) return;
+      setState(() => _playerVolume = level);
+      _persistPlayerVolume();
+    });
+  }
+
+  void _setPlayerVolume(double fraction) {
+    final level = (fraction * 100).clamp(0.0, 100.0).toDouble();
+    setState(() => _playerVolume = level);
+    unawaited(_manager.backend?.setVolume(level));
+    _manager.reportVolumeState(volume: level, isMuted: level <= 0);
+    _persistPlayerVolume();
+  }
+
+  void _togglePlayerMute() {
+    if (_playerVolume > 0) {
+      _volumeBeforeMute = _playerVolume;
+      _setPlayerVolume(0);
+    } else {
+      _setPlayerVolume(_volumeBeforeMute / 100);
+    }
+  }
+
+  void _persistPlayerVolume() {
+    _persistVolumeTimer?.cancel();
+    _persistVolumeTimer = Timer(const Duration(milliseconds: 400), () {
+      unawaited(_prefs.set(UserPreferences.playerVolume, _playerVolume));
+    });
   }
 
   Future<void> _setMobileSystemVolume(
@@ -650,6 +689,10 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     }
   }
 
+  bool get _indicatorsInverted =>
+      _prefs.get(UserPreferences.gestureIndicatorPlacement) ==
+      GestureIndicatorPlacement.inverted;
+
   Widget _buildVolumeOverlay() {
     final displayVolume = _systemVolume;
     final usingMedia3Boost = _activeMedia3Backend != null;
@@ -669,7 +712,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
         duration: const Duration(milliseconds: 200),
         child: IgnorePointer(
           child: Align(
-            alignment: const Alignment(0.85, 0.0),
+            alignment: Alignment(_indicatorsInverted ? -0.85 : 0.85, 0.0),
             child: _buildGestureIndicator(
               icon: displayVolume <= 0
                   ? Icons.volume_off_rounded
@@ -692,7 +735,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
         duration: const Duration(milliseconds: 200),
         child: IgnorePointer(
           child: Align(
-            alignment: const Alignment(-0.85, 0.0),
+            alignment: Alignment(_indicatorsInverted ? 0.85 : -0.85, 0.0),
             child: _buildGestureIndicator(
               icon: _brightnessValue <= 0.25
                   ? Icons.brightness_low_rounded
@@ -789,7 +832,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     final terminalState = await observeChannelTune(
       channelId: channel.id,
       states: _manager.bringupStateStream,
-      timeout: _kChannelTuneTimeout,
+      timeout: channelTuneTimeout,
       start: () => _manager.playItems(
         [item],
         enableDirectPlay: allowDirect,
@@ -798,7 +841,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
         // remux keeps the original codecs and arrives as HLS, which has the
         // live window a raw transport stream never had. Withdrawing both left
         // them with a transcode nobody asked for.
-        enableDirectStream: allowDirect,
+        enableDirectStream: true,
         // Keep transcoding available as a fallback so a failed direct-play
         // of the upstream URL recovers to the server transcode instead of
         // erroring.
@@ -956,14 +999,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
       DateTime.now(),
     );
     if (mounted && _currentChannel.id == channelId) {
-      setState(() {
-        if (id == null) {
-          _channelTimers.remove(channelId);
-          _recordingBlinkOn = true;
-        } else {
-          _channelTimers[channelId] = id;
-        }
-      });
+      setState(() => _activeChannelTimerId = id);
     }
     return id;
   }
@@ -972,9 +1008,6 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     final channelId = _currentChannel.id;
     final revision = ++_programRequestRevision;
     try {
-      try {
-        await _refreshChannelRecording(channelId);
-      } catch (_) {}
       final now = DateTime.now();
       final response = await _client.liveTvApi.getGuide(
         startDate: now.subtract(const Duration(minutes: 30)),
@@ -1003,11 +1036,8 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
       DateTime? selectedEnd;
       for (final item in items) {
         final raw = item as Map<String, dynamic>;
-        final startStr = raw['StartDate']?.toString();
-        final endStr = raw['EndDate']?.toString();
-        if (startStr == null || endStr == null) continue;
-        final start = DateTime.tryParse(startStr)?.toLocal();
-        final end = DateTime.tryParse(endStr)?.toLocal();
+        final start = parseServerDate(raw['StartDate'])?.toLocal();
+        final end = parseServerDate(raw['EndDate'])?.toLocal();
         if (start == null || end == null) continue;
 
         selected ??= raw;
@@ -1079,14 +1109,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     }
   }
 
-  bool get _canRecordCurrentProgram {
-    final program = _currentProgram;
-    final now = DateTime.now();
-    return program != null &&
-        program.id.isNotEmpty &&
-        !now.isBefore(program.startDate) &&
-        now.isBefore(program.endDate);
-  }
+  bool get _canRecordCurrentProgram => canRecordAiring(_currentProgram);
 
   Future<void> _showRecordingDialog() async {
     if (_recordingActionInProgress || _isSwitching || _isStopping) return;
@@ -1104,22 +1127,13 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
       final refreshed = await _fetchCurrentProgram();
       if (!mounted || _isStopping || _currentChannel.id != channel.id) return;
 
-      // A timer created without EPG has no ProgramId. If one is active on the
-      // tuned channel, REC behaves as STOP REC even if guide data later appears.
-      final inProgressTimerId = channelTimerId ??
-          (_recordingState?.isRecording == true
-              ? _recordingState?.timerId
-              : null);
-      if (inProgressTimerId != null &&
-          (_recordingState?.timerId == null ||
-              _recordingState?.isRecording == true)) {
-        await _client.liveTvApi.cancelTimer(inProgressTimerId);
+      final ongoingTimer = channelTimerId ??
+          (_recordingState?.isRecording == true ? _recordingState?.timerId : null);
+      if (ongoingTimer != null) {
+        await _client.liveTvApi.cancelTimer(ongoingTimer);
         message = 'Registrazione interrotta';
-        await _refreshChannelRecording(channel.id);
-        return;
-      }
-
-      if (!refreshed || !_canRecordCurrentProgram || _recordingState == null) {
+      } else if (!refreshed || !_canRecordCurrentProgram ||
+          _recordingState == null) {
         final minutes = await showDialog<int>(
           context: context,
           builder: (dialogContext) => SimpleDialog(
@@ -1142,12 +1156,8 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
             ],
           ),
         );
-        if (!mounted ||
-            minutes == null ||
-            _isStopping ||
-            _currentChannel.id != channel.id) {
-          return;
-        }
+        if (!mounted || minutes == null || _isStopping ||
+            _currentChannel.id != channel.id) return;
         final now = DateTime.now();
         await _client.liveTvApi.createChannelTimer(
           channelId: channel.id,
@@ -1156,14 +1166,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
           endDate: now.add(Duration(minutes: minutes)),
         );
         message = l10n.programSetToRecord;
-        await Future<void>.delayed(const Duration(milliseconds: 250));
-        await _refreshChannelRecording(channel.id);
-        return;
-      }
-
-      // REC is one press on Android TV, as in Moonfin REC 2.6.
-      // A future timer/series still opens Jellyfin's recording action dialog.
-      if (shouldInstantRecordCurrentProgram(
+      } else if (shouldInstantRecordCurrentProgram(
         isTv: PlatformDetection.isTV,
         hasLiveProgram: _currentProgram != null,
         canRecordProgram: _canRecordCurrentProgram,
@@ -1172,77 +1175,28 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
       )) {
         await _client.liveTvApi.createTimer(_currentProgram!.id);
         message = l10n.programSetToRecord;
-        await Future<void>.delayed(const Duration(milliseconds: 250));
-        await _refreshChannelRecording(channel.id);
-        return;
+      } else {
+        final program = _currentProgram!;
+        message = await runLiveTvRecordingFlow(
+          context: context,
+          liveTvApi: _client.liveTvApi,
+          program: program,
+          recording: _recordingState!,
+          programTime:
+              '${_formatTime(program.startDate)} – ${_formatTime(program.endDate)}',
+          channel: recordPromptChannel(channel.number, channel.name),
+          use24HourClock: _prefs.get(UserPreferences.use24HourClock),
+          stillOnProgram: () => mounted && !_isStopping &&
+              _currentProgram?.id == program.id,
+        );
       }
-
-      final program = _currentProgram!;
-      final recording = _recordingState!;
-      final action = await showLiveTvRecordingDialog(
-        context: context,
-        programName: program.name,
-        programTime:
-            '${_formatTime(program.startDate)} – ${_formatTime(program.endDate)}',
-        episodeLine: program.episodeLine,
-        isSeries: program.isSeries,
-        recording: recording,
-        use24HourClock: _prefs.get(UserPreferences.use24HourClock),
-      );
-      if (action == null ||
-          !mounted ||
-          _isStopping ||
-          _currentProgram?.id != program.id) {
-        return;
-      }
-      if (!_canRecordCurrentProgram &&
-          (action == LiveTvRecordingAction.recordProgram ||
-              action == LiveTvRecordingAction.recordSeries)) {
-        return;
-      }
-
-      try {
-        switch (action) {
-          case LiveTvRecordingAction.recordProgram:
-            await _client.liveTvApi.createTimer(program.id);
-            message = l10n.programSetToRecord;
-          case LiveTvRecordingAction.recordSeries:
-            await _client.liveTvApi.createSeriesTimer(program.id);
-            message = l10n.seriesSetToRecord;
-          case LiveTvRecordingAction.cancelProgram:
-            await _client.liveTvApi.cancelTimer(recording.timerId!);
-            message = recording.isRecording
-                ? 'Registrazione interrotta'
-                : l10n.recordingCancelled;
-          case LiveTvRecordingAction.cancelSeries:
-            await _client.liveTvApi.cancelSeriesTimer(recording.seriesTimerId!);
-            message = l10n.seriesRecordingCancelled;
-          case LiveTvRecordingAction.changeSeries:
-            final changed = await changeSeriesRecordingEpisodes(
-              context: context,
-              liveTvApi: _client.liveTvApi,
-              seriesTimerId: recording.seriesTimerId!,
-            );
-            if (changed) message = l10n.seriesRecordingUpdated;
-        }
-      } catch (e) {
-        if (isPremiereError(e) && mounted) {
-          await showPremiereRequiredDialog(context);
-          return;
-        }
-        message = switch (action) {
-          LiveTvRecordingAction.recordProgram => l10n.unableToCreateRecording,
-          LiveTvRecordingAction.recordSeries =>
-            l10n.unableToCreateSeriesRecording,
-          LiveTvRecordingAction.cancelProgram => l10n.failedToCancelRecording,
-          LiveTvRecordingAction.cancelSeries =>
-            l10n.failedToCancelSeriesRecording,
-          LiveTvRecordingAction.changeSeries => l10n.failedToCancelSeriesRecording,
-        };
-      }
+      if (!mounted || _isStopping || _currentChannel.id != channel.id) return;
       await Future<void>.delayed(const Duration(milliseconds: 250));
-      await _refreshChannelRecording(channel.id);
+      try { await _refreshChannelRecording(channel.id); } catch (_) {}
       await _fetchCurrentProgram();
+    } catch (error) {
+      if (!mounted) return;
+      message = l10n.unableToCreateRecording;
     } finally {
       _recordingActionInProgress = false;
       if (mounted && !_isStopping) {
@@ -1279,11 +1233,6 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     _recordingRefreshInProgress = true;
     try {
       final timers = await _client.liveTvApi.getTimers();
-      final channelTimerId = activeChannelTimerId(
-        (timers['Items'] as List?) ?? const [],
-        program.channelId,
-        DateTime.now(),
-      );
       if (!mounted ||
           _recordingActionInProgress ||
           revision != _programRequestRevision ||
@@ -1296,12 +1245,6 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
           program.rawData,
           (timers['Items'] as List?) ?? const [],
         );
-        if (channelTimerId == null) {
-          _channelTimers.remove(program.channelId);
-          _recordingBlinkOn = true;
-        } else {
-          _channelTimers[program.channelId] = channelTimerId;
-        }
       });
     } catch (_) {
     } finally {
@@ -1338,8 +1281,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     if (_streamsOfType('Audio').length > 1) _tvAudioFocus,
     if (_hasSubtitleChoices) _tvSubtitleFocus,
     _tvBitrateFocus,
-    _tvRecordFocus,
-    _tvZoomFocus,
+    if (PlatformDetection.isTV || _canRecordCurrentProgram) _tvRecordFocus,
     _tvPlaybackInfoFocus,
   ];
 
@@ -1622,15 +1564,21 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
   }
 
   void _showPlaybackInfo() {
-    final l10n = AppLocalizations.of(context);
-    final streamInfoSections = _buildLiveTvStreamInfoSections();
-    unawaited(
-      showStreamInfoDialog(
+    unawaited(() async {
+      final (transcodingInfo, device) = await (
+        fetchOwnTranscodingInfo(_client, _manager.currentResolution),
+        playbackDeviceLabel(),
+      ).wait;
+      if (!mounted) return;
+      await showStreamInfoDialog(
         context: context,
-        title: l10n.playbackInformation,
-        streamInfoSections: streamInfoSections,
-      ),
-    );
+        title: AppLocalizations.of(context).playbackInformation,
+        streamInfoSections: _buildLiveTvStreamInfoSections(
+          transcodingInfo: transcodingInfo,
+          device: device,
+        ),
+      );
+    }());
     _showInfo();
   }
 
@@ -1824,206 +1772,35 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     _showInfo();
   }
 
-  List<Map<String, dynamic>> _buildLiveTvStreamInfoSections() {
-    final l10n = AppLocalizations.of(context);
+  List<Map<String, dynamic>> _buildLiveTvStreamInfoSections({
+    Map<String, dynamic>? transcodingInfo,
+    String? device,
+  }) {
     final resolution = _manager.currentResolution;
-    final streamPlayMethod = resolution?.playMethod;
-    final playMethod = switch (streamPlayMethod?.name) {
-      'directPlay' => l10n.directPlay,
-      'directStream' => l10n.directStream,
-      'transcode' => l10n.transcoding,
-      _ => l10n.unknown,
-    };
-    final backendLabel = _activeMedia3Backend != null
-        ? 'Media3 (ExoPlayer)'
-        : 'Media Kit (MPV)';
-    final channelLabel = _currentChannel.number == null
-        ? _currentChannel.name
-        : '${_currentChannel.number} ${_currentChannel.name}';
-    final duration = _state.duration;
-    final durationLabel = duration > Duration.zero
-        ? formatPlaybackDuration(duration)
-        : 'Live';
-    final streams = resolution?.mediaStreams ?? const <Map<String, dynamic>>[];
-
-    Map<String, dynamic>? pickStream(String type, int? preferredIndex) {
-      if (preferredIndex != null && preferredIndex >= 0) {
-        final preferred = streams
-            .where((s) => s['Type'] == type)
-            .firstWhere(
-              (s) => s['Index'] == preferredIndex,
-              orElse: () => const <String, dynamic>{},
-            );
-        if (preferred.isNotEmpty) {
-          return preferred;
-        }
-      }
-      return streams
-              .where((s) => s['Type'] == type && s['IsDefault'] == true)
-              .firstOrNull ??
-          streams.where((s) => s['Type'] == type).firstOrNull;
-    }
-
-    final videoStream = streams.where((s) => s['Type'] == 'Video').firstOrNull;
-    final audioStream = pickStream('Audio', _manager.audioStreamIndex);
-    final subtitleStream = _manager.subtitleStreamIndex == -1
-        ? null
-        : pickStream('Subtitle', _manager.subtitleStreamIndex);
-
-    Map<String, dynamic> row(
-      String label,
-      String value, {
-      bool highlight = false,
-    }) {
-      return {'label': label, 'value': value, 'highlight': highlight};
-    }
-
-    final sections = <Map<String, dynamic>>[];
-
-    void addSection(String title, List<Map<String, dynamic>> rows) {
-      if (rows.isEmpty) return;
-      sections.add({'title': title, 'rows': rows});
-    }
-
-    final playbackRows = <Map<String, dynamic>>[
-      row('Channel', channelLabel, highlight: true),
-      if (_currentProgram?.name.isNotEmpty == true)
-        row('Program', _currentProgram!.name),
-      row(l10n.playMethod, playMethod, highlight: true),
-      if (resolution != null &&
-          streamPlayMethod == StreamPlayMethod.transcode &&
-          resolution.transcodingReasons.isNotEmpty)
-        row(
-          l10n.transcodeReasons,
-          resolution.transcodingReasons
-              .map(
-                (r) => r.replaceAllMapped(
-                  RegExp(r'(?<=[a-z])(?=[A-Z])'),
-                  (_) => ' ',
-                ),
-              )
-              .join(', '),
-        ),
-      row(l10n.player, backendLabel),
-      row(
-        l10n.container,
-        (() {
-          final container = (resolution?.container ?? '').trim().toUpperCase();
-          return container.isEmpty ? l10n.unknown : container;
-        })(),
+    final channel = _currentChannel;
+    return buildPlaybackInfoSections(
+      l10n: AppLocalizations.of(context),
+      resolution: resolution,
+      mediaStreams: resolution?.mediaStreams ?? const <Map<String, dynamic>>[],
+      audioStreamIndex: _manager.audioStreamIndex,
+      // A caption track isn't a server stream, so it gets no Subtitles section.
+      subtitleStreamIndex: _captionTrackId == null
+          ? _manager.subtitleStreamIndex
+          : -1,
+      transcodingInfo: transcodingInfo,
+      transcodeForced: transcodeForcedBySettings(_manager),
+      qualityLimitMbps: userQualityLimitMbps(
+        _manager.maxBitrateOverrideMbps,
+        _prefs.get(UserPreferences.maxBitrate),
       ),
-      row('Playing', _state.isPlaying ? 'Yes' : 'No'),
-      row('Buffering', _state.isBuffering ? 'Yes' : 'No'),
-      row('Position', formatPlaybackDuration(_state.position)),
-      row('Duration', durationLabel),
-    ];
-    addSection(l10n.playback, playbackRows);
-
-    if (videoStream != null) {
-      final fps = videoStream['RealFrameRate'] as num?;
-      final width = videoStream['Width'];
-      final height = videoStream['Height'];
-      final videoRows = <Map<String, dynamic>>[
-        row(
-          l10n.resolution,
-          '${width ?? '?'}x${height ?? '?'}${fps != null ? ' @ ${fps.round()}fps' : ''}',
-        ),
-        row(l10n.hdr, videoRangeLabel(videoStream)),
-        row(l10n.codec, _formatVideoCodec(videoStream)),
-        if (videoStream['BitRate'] != null)
-          row(
-            l10n.videoBitrate,
-            _formatBitrate(videoStream['BitRate'] as int?),
-          ),
-      ];
-      addSection(l10n.video, videoRows);
-    }
-
-    if (audioStream != null) {
-      final audioRows = <Map<String, dynamic>>[
-        row(
-          l10n.track,
-          audioStream['DisplayTitle'] as String? ??
-              audioStream['Language'] as String? ??
-              l10n.unknown,
-        ),
-        row(l10n.codec, _formatAudioCodec(audioStream)),
-        row(l10n.channels, _formatChannels(audioStream['Channels'] as int?)),
-        if (audioStream['BitRate'] != null)
-          row(
-            l10n.audioBitrate,
-            _formatBitrate(audioStream['BitRate'] as int?),
-          ),
-        if (audioStream['SampleRate'] != null)
-          row(
-            l10n.sampleRate,
-            '${((audioStream['SampleRate'] as num) / 1000).toStringAsFixed(1)} kHz',
-          ),
-      ];
-      addSection(l10n.audio, audioRows);
-    }
-
-    if (subtitleStream != null) {
-      final subtitleRows = <Map<String, dynamic>>[
-        row(
-          l10n.track,
-          subtitleStream['DisplayTitle'] as String? ??
-              subtitleStream['Language'] as String? ??
-              l10n.unknown,
-        ),
-        row(
-          l10n.format,
-          ((subtitleStream['Codec'] as String?) ?? l10n.unknown).toUpperCase(),
-        ),
-        row(
-          l10n.type,
-          subtitleStream['IsExternal'] == true ? l10n.external : l10n.embedded,
-        ),
-      ];
-      addSection(l10n.subtitles, subtitleRows);
-    }
-
-    return sections;
-  }
-
-  String _formatBitrate(int? bitrate) {
-    final l10n = AppLocalizations.of(context);
-    if (bitrate == null || bitrate <= 0) {
-      return l10n.unknown;
-    }
-    return '${(bitrate / 1000000).toStringAsFixed(1)} Mbps';
-  }
-
-  String _formatVideoCodec(Map<String, dynamic> stream) {
-    final codec = ((stream['Codec'] as String?) ?? '').trim().toUpperCase();
-    final profile = ((stream['Profile'] as String?) ?? '').trim();
-    if (codec.isEmpty) {
-      return AppLocalizations.of(context).unknown;
-    }
-    if (profile.isEmpty) {
-      return codec;
-    }
-    return '$codec $profile';
-  }
-
-  String _formatAudioCodec(Map<String, dynamic> stream) {
-    final codec = ((stream['Codec'] as String?) ?? '').trim().toUpperCase();
-    if (codec.isNotEmpty) {
-      return codec;
-    }
-    return AppLocalizations.of(context).unknown;
-  }
-
-  String _formatChannels(int? channels) {
-    final l10n = AppLocalizations.of(context);
-    if (channels == null) return l10n.unknown;
-    return switch (channels) {
-      8 => '7.1',
-      6 => '5.1',
-      2 => l10n.stereo,
-      1 => l10n.mono,
-      _ => l10n.channelsCount(channels),
-    };
+      channel: channel.number == null
+          ? channel.name
+          : '${channel.number} ${channel.name}',
+      program: _currentProgram?.name,
+      player: playerEngineName(_manager.backend),
+      device: device,
+      audioRoute: playbackAudioRoute(resolution?.mediaSourceId),
+    );
   }
 
   // Opens the channel guide as an in-player overlay (not a separate route) so
@@ -2231,7 +2008,10 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
 
   @override
   Widget build(BuildContext context) {
-    final gesturesEnabled = PlatformDetection.isMobile && !_isGuidePickerOpen;
+    final gesturesEnabled =
+        PlatformDetection.isMobile &&
+        !_isGuidePickerOpen &&
+        _prefs.get(UserPreferences.playerSwipeGestures);
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -2295,35 +2075,14 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
                   if (PlatformDetection.isMobile) _buildVolumeOverlay(),
                   if (_isGuidePickerOpen) _buildGuideOverlay(),
                   if (_isCarouselOpen) _buildChannelCarouselOverlay(),
-                  if (_channelRecording)
-                    Positioned(
-                      top: 26,
-                      right: 30,
-                      child: IgnorePointer(
-                        child: AnimatedOpacity(
-                          opacity: _recordingBlinkOn ? 1.0 : 0.18,
-                          duration: const Duration(milliseconds: 220),
-                          child: Container(
-                            width: 14,
-                            height: 14,
-                            decoration: const BoxDecoration(
-                              color: Colors.red,
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Color(0x99000000),
-                                  blurRadius: 5,
-                                  spreadRadius: 1,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
                   if (_infoVisible &&
                       !_isGuidePickerOpen &&
                       !_isCarouselOpen) ...[
+                    const Positioned.fill(
+                      child: IgnorePointer(
+                        child: ColoredBox(color: Color(0x4D000000)),
+                      ),
+                    ),
                     _buildTopOverlay(),
                     _buildBottomOverlay(),
                   ],
@@ -2365,56 +2124,9 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     );
   }
 
-  BoxFit get _liveTvFit => switch (_zoomMode) {
-    ZoomMode.fit => BoxFit.contain,
-    ZoomMode.autoCrop => BoxFit.cover,
-    ZoomMode.stretch => BoxFit.fill,
-  };
-
-  String get _liveTvZoomLabel => switch (_zoomMode) {
-    ZoomMode.fit => 'FIT',
-    ZoomMode.autoCrop => 'CROP',
-    ZoomMode.stretch => 'STRETCH',
-  };
-
-  Future<void> _syncLiveTvZoom() async {
-    final backend = _activeMedia3Backend;
-    if (backend == null) return;
-    try {
-      await backend.setZoomMode(
-        switch (_zoomMode) {
-          ZoomMode.fit => 'fit',
-          ZoomMode.autoCrop => 'zoomToFill',
-          ZoomMode.stretch => 'stretch',
-        },
-      );
-    } catch (error) {
-      GetIt.instance<LogService>().log(
-        LogCategory.playback,
-        'Live TV zoom: $error',
-        level: LogLevel.warning,
-      );
-    }
-  }
-
-  void _cycleLiveTvZoom() {
-    setState(() {
-      _zoomMode =
-          ZoomMode.values[(_zoomMode.index + 1) % ZoomMode.values.length];
-    });
-    unawaited(_syncLiveTvZoom());
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Formato video: $_liveTvZoomLabel'),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-    _scheduleHide();
-  }
-
   Widget _buildVideoChild() {
-    if (PlatformDetection.isIOS || PlatformDetection.isMacOS) {
-      return AetherVideoView(zoomMode: _zoomMode.name);
+    if (PlatformDetection.isApple || PlatformDetection.isAppleTV) {
+      return const AetherVideoView();
     }
 
     final prefersMedia3 =
@@ -2427,7 +2139,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
 
     final htmlBackend = _activeHtmlVideoBackend;
     if (htmlBackend != null) {
-      return htmlBackend.buildView(fit: _liveTvFit);
+      return htmlBackend.buildView(fit: BoxFit.contain);
     }
 
     final mediaKitBackend = _activeMediaKitBackend ?? _backend;
@@ -2439,11 +2151,6 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
         player: mediaKitBackend.player,
         fill: Colors.black,
         videoOutput: 'gpu',
-        zoomMode: switch (_zoomMode) {
-          ZoomMode.fit => NativeVideoZoomMode.fit,
-          ZoomMode.autoCrop => NativeVideoZoomMode.zoomToFill,
-          ZoomMode.stretch => NativeVideoZoomMode.stretch,
-        },
         hardwareDecodingEnabled: _prefs.get(UserPreferences.hardwareDecoding),
       );
     }
@@ -2456,7 +2163,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     return Video(
       controller: controller,
       controls: NoVideoControls,
-      fit: _liveTvFit,
+      fit: BoxFit.contain,
       fill: Colors.black,
       pauseUponEnteringBackgroundMode: false,
       subtitleViewConfiguration: _buildSubtitleConfig(),
@@ -2855,32 +2562,28 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
             tooltip: l10n.bitrate,
             onPressed: _showBitrateSelector,
           ),
-          const SizedBox(width: AppSpacing.spaceSm),
-          _buildOverlayControlButton(
-            focusNode: PlatformDetection.isTV ? _tvRecordFocus : null,
-            icon: _recordingState?.seriesTimerId != null
-                ? Icons.fiber_smart_record
-                : Icons.fiber_manual_record,
-            iconColor: _channelRecording ||
-                    _recordingState?.isRecording == true ||
-                    _recordingState?.seriesTimerId != null
-                ? Colors.red
-                : Colors.white,
-            tooltip: _channelRecording || _recordingState?.isRecording == true
-                ? 'STOP REC'
-                : l10n.record,
-            label: _channelRecording || _recordingState?.isRecording == true
-                ? 'STOP REC'
-                : 'REC',
-            onPressed: () => unawaited(_showRecordingDialog()),
-          ),
-          const SizedBox(width: AppSpacing.spaceSm),
-          _buildOverlayControlButton(
-            focusNode: PlatformDetection.isTV ? _tvZoomFocus : null,
-            icon: Icons.aspect_ratio_rounded,
-            tooltip: _liveTvZoomLabel,
-            onPressed: _cycleLiveTvZoom,
-          ),
+          if (PlatformDetection.isTV || _canRecordCurrentProgram) ...[
+            const SizedBox(width: AppSpacing.spaceSm),
+            _buildOverlayControlButton(
+              focusNode: PlatformDetection.isTV ? _tvRecordFocus : null,
+              icon: _activeChannelTimerId != null ||
+                      _recordingState?.isRecording == true
+                  ? Icons.stop_circle_outlined
+                  : (_recordingState?.seriesTimerId != null
+                      ? Icons.fiber_smart_record
+                      : Icons.fiber_manual_record),
+              iconColor: _recordingState?.seriesTimerId != null
+                  ? (_recordingState?.timerId != null
+                        ? Colors.red
+                        : LiveTvRecordingIcon.skippedColor)
+                  : (_recordingState?.isRecording == true
+                        ? Colors.red
+                        : Colors.white),
+              tooltip: _activeChannelTimerId != null || _recordingState?.isRecording == true
+                  ? 'STOP REC' : 'REC',
+              onPressed: () => unawaited(_showRecordingDialog()),
+            ),
+          ],
           const SizedBox(width: AppSpacing.spaceSm),
           _buildOverlayControlButton(
             focusNode: PlatformDetection.isTV ? _tvPlaybackInfoFocus : null,
@@ -2888,7 +2591,45 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
             tooltip: l10n.playbackInformation,
             onPressed: _showPlaybackInfo,
           ),
-          const Spacer(),
+          if (_usesPlayerVolume && PlatformDetection.useDesktopUi)
+            Expanded(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  _buildOverlayControlButton(
+                    icon: volumeIconFor(_playerVolume / 100),
+                    tooltip: _playerVolume > 0 ? l10n.mute : l10n.unmute,
+                    onPressed: _togglePlayerMute,
+                  ),
+                  const SizedBox(width: AppSpacing.spaceSm),
+                  // Shrinks before the row overflows in a narrow window.
+                  Flexible(
+                    child: SizedBox(
+                      width: 120,
+                      child: SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: 3,
+                          overlayShape: SliderComponentShape.noOverlay,
+                          thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 6,
+                          ),
+                        ),
+                        child: Slider(
+                          value: _playerVolume / 100,
+                          activeColor: AppColorScheme.accent,
+                          inactiveColor: Colors.white24,
+                          onChangeStart: (_) => _hideTimer?.cancel(),
+                          onChanged: _setPlayerVolume,
+                          onChangeEnd: (_) => _scheduleHide(),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            const Spacer(),
         ],
       ),
     );
@@ -3060,7 +2801,6 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     required String tooltip,
     required VoidCallback onPressed,
     Color iconColor = Colors.white,
-    String? label,
   }) {
     if (PlatformDetection.isTV) {
       return _LiveTvRoundControlButton(
@@ -3069,7 +2809,6 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
         tooltip: tooltip,
         icon: icon,
         iconColor: iconColor,
-        label: label,
       );
     }
 
@@ -3102,7 +2841,6 @@ class _LiveTvRoundControlButton extends StatefulWidget {
   final String tooltip;
   final IconData icon;
   final Color iconColor;
-  final String? label;
 
   const _LiveTvRoundControlButton({
     required this.onPressed,
@@ -3110,7 +2848,6 @@ class _LiveTvRoundControlButton extends StatefulWidget {
     required this.icon,
     this.focusNode,
     this.iconColor = Colors.white,
-    this.label,
   });
 
   @override
@@ -3193,16 +2930,14 @@ class _LiveTvRoundControlButtonState extends State<_LiveTvRoundControlButton> {
           // focusable InkWell would add a second, invisible focus node that
           // breaks the OSD's manual arrow navigation.
           canRequestFocus: false,
-          customBorder: widget.label == null
-              ? const CircleBorder()
-              : RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+          customBorder: const CircleBorder(),
           onTap: widget.onPressed,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 140),
-            width: widget.label == null ? 52 : 94,
+            width: 52,
             height: 52,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(26),
+              shape: BoxShape.circle,
               color: _focused
                   ? AppColorScheme.accent.withValues(alpha: 0.30)
                   : Colors.white.withValues(alpha: 0.14),
@@ -3215,9 +2950,7 @@ class _LiveTvRoundControlButtonState extends State<_LiveTvRoundControlButton> {
                 ),
               ),
             ),
-            child: widget.label == null
-                ? Icon(widget.icon, size: 24, color: widget.iconColor)
-                : Center(child: Text(widget.label!, style: TextStyle(color: widget.iconColor, fontWeight: FontWeight.bold, fontSize: 13))),
+            child: Icon(widget.icon, size: 24, color: widget.iconColor),
           ),
         ),
       ),
