@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import 'package:moonfin_design/moonfin_design.dart';
 import 'package:server_core/server_core.dart';
 
-import '../../../data/models/live_tv_recording_state.dart';
 import '../../../data/viewmodels/recordings_view_model.dart';
 import '../../../data/viewmodels/schedule_view_model.dart';
 import '../../../data/viewmodels/series_recordings_view_model.dart';
@@ -12,12 +11,9 @@ import '../../../l10n/app_localizations.dart';
 import '../../../preference/user_preferences.dart';
 import '../../../ui/mixins/focus_state_mixin.dart';
 import '../../../util/focus/dpad_keys.dart';
-import '../../../util/focus/focus_scroll.dart';
 import '../../navigation/destinations.dart';
 import '../../widgets/adaptive/adaptive_dialog.dart';
 import '../../widgets/focus/request_initial_focus.dart';
-import '../../widgets/live_tv/incomplete_recording.dart';
-import '../../widgets/live_tv/series_recording_dialog.dart';
 import '../../widgets/overlay_sheet.dart';
 import '../../widgets/offline_aware_image.dart';
 
@@ -35,6 +31,7 @@ class _LiveTvRecordingsScreenState extends State<LiveTvRecordingsScreen> {
   late final ScheduleViewModel _scheduleVm;
   late final SeriesRecordingsViewModel _seriesVm;
   _RecordingsTab _activeTab = _RecordingsTab.recordings;
+  bool _deletingRecording = false;
 
   @override
   void initState() {
@@ -48,26 +45,14 @@ class _LiveTvRecordingsScreenState extends State<LiveTvRecordingsScreen> {
     _vm.load();
     _scheduleVm.load();
     _seriesVm.load();
-    liveTvRecordingRevision.addListener(_onRecordingsChanged);
   }
 
   void _onChanged() {
     if (mounted) setState(() {});
   }
 
-  /// Cancelling a series rule also cancels its scheduled showings, and a rule
-  /// can be added or changed from a screen opened over this one, so every tab
-  /// re-reads rather than keep the old list.
-  void _onRecordingsChanged() {
-    if (!mounted) return;
-    _scheduleVm.refresh();
-    _seriesVm.refresh();
-    _vm.refreshScheduled();
-  }
-
   @override
   void dispose() {
-    liveTvRecordingRevision.removeListener(_onRecordingsChanged);
     _vm.removeListener(_onChanged);
     _scheduleVm.removeListener(_onChanged);
     _seriesVm.removeListener(_onChanged);
@@ -152,6 +137,17 @@ class _LiveTvRecordingsScreenState extends State<LiveTvRecordingsScreen> {
                   onPressed: () =>
                       setState(() => _activeTab = _RecordingsTab.series),
                 ),
+                if (_activeTab == _RecordingsTab.recordings &&
+                    _vm.focusedItem != null)
+                  _RecordingsPillButton(
+                    icon: Icons.delete_outline_rounded,
+                    label: _deletingRecording
+                        ? l10n.pleaseWait
+                        : l10n.delete,
+                    onPressed: _deletingRecording
+                        ? null
+                        : () => _deleteRecording(_vm.focusedItem!),
+                  ),
                 Padding(
                   padding: const EdgeInsetsDirectional.only(start: 4),
                   child: _RecordingsPillButton(
@@ -189,7 +185,11 @@ class _LiveTvRecordingsScreenState extends State<LiveTvRecordingsScreen> {
     }
     final l10n = AppLocalizations.of(context);
     final rows = <Widget>[];
-    void addRow(String title, List<RecordingItem> items) {
+    void addRow(
+      String title,
+      List<RecordingItem> items, {
+      bool scheduled = false,
+    }) {
       if (items.isEmpty) {
         return;
       }
@@ -198,13 +198,18 @@ class _LiveTvRecordingsScreenState extends State<LiveTvRecordingsScreen> {
           title: title,
           items: items,
           imageApi: _vm.imageApi,
-          onItemFocused: _vm.setFocusedItem,
+          onItemFocused:
+              scheduled ? (_) => _vm.clearFocusedItem() : _vm.setFocusedItem,
           onItemTap: _onItemTap,
         ),
       );
     }
 
-    addRow(l10n.scheduledInNext24Hours, _vm.scheduledNext24h);
+    addRow(
+      l10n.scheduledInNext24Hours,
+      _vm.scheduledNext24h,
+      scheduled: true,
+    );
     addRow(l10n.recentRecordings, _vm.recentRecordings);
     addRow(l10n.tvSeries, _vm.seriesRecordings);
     addRow(l10n.movies, _vm.movieRecordings);
@@ -282,7 +287,7 @@ class _LiveTvRecordingsScreenState extends State<LiveTvRecordingsScreen> {
         _SeriesTimerRow(
           timers: _seriesVm.seriesTimers,
           onItemFocused: _seriesVm.setFocusedTimer,
-          onItemTap: (timer) => _showSeriesTimerOptions(timer),
+          onItemTap: (timer) => _cancelSeriesTimer(timer),
         ),
       ],
     );
@@ -314,9 +319,7 @@ class _LiveTvRecordingsScreenState extends State<LiveTvRecordingsScreen> {
     );
     if (confirmed == true) {
       try {
-        await _scheduleVm.cancelTimer(
-          item.timerId ?? (throw StateError('No timer for ${item.name}')),
-        );
+        await _scheduleVm.cancelTimer(item.id);
       } catch (_) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -324,43 +327,6 @@ class _LiveTvRecordingsScreenState extends State<LiveTvRecordingsScreen> {
           );
         }
       }
-    }
-  }
-
-  Future<void> _showSeriesTimerOptions(SeriesTimerItem timer) async {
-    final option = await showSeriesTimerOptionsDialog(
-      context: context,
-      name: timer.name,
-      subtitle: timer.subtitle,
-    );
-    if (!mounted) return;
-    switch (option) {
-      case SeriesTimerOption.changeSettings:
-        await _changeSeriesTimer(timer);
-      case SeriesTimerOption.cancel:
-        await _cancelSeriesTimer(timer);
-      case null:
-        break;
-    }
-  }
-
-  Future<void> _changeSeriesTimer(SeriesTimerItem timer) async {
-    final l10n = AppLocalizations.of(context);
-    try {
-      final changed = await changeSeriesRecordingEpisodes(
-        context: context,
-        liveTvApi: GetIt.instance<MediaServerClient>().liveTvApi,
-        seriesTimerId: timer.id,
-      );
-      if (!changed || !mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.seriesRecordingUpdated)),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.failedToUpdateSeriesRecording)),
-      );
     }
   }
 
@@ -398,6 +364,57 @@ class _LiveTvRecordingsScreenState extends State<LiveTvRecordingsScreen> {
           );
         }
       }
+    }
+  }
+
+  Future<void> _deleteRecording(RecordingItem item) async {
+    if (_deletingRecording) return;
+    _deletingRecording = true;
+    if (mounted) setState(() {});
+    final l10n = AppLocalizations.of(context);
+    try {
+      final confirmed = await showFocusRestoringDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog.adaptive(
+          backgroundColor: const Color(0xFF1A1A2E),
+          title: Text(
+            l10n.deleteRecordingTitle,
+            style: const TextStyle(color: Colors.white),
+          ),
+          content: Text(
+            l10n.deleteConfirmMessage(item.name),
+            style: const TextStyle(color: Colors.white),
+          ),
+          actions: [
+            adaptiveDialogAction(
+              autofocus: true,
+              onPressed: () =>
+                  Navigator.of(ctx, rootNavigator: true).pop(false),
+              child: Text(l10n.cancel),
+            ),
+            TextButton(
+              onPressed: () =>
+                  Navigator.of(ctx, rootNavigator: true).pop(true),
+              style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+              child: Text(l10n.delete),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      await _vm.deleteRecording(item);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.recordingDeleted)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.failedToDeleteItem)),
+      );
+    } finally {
+      _deletingRecording = false;
+      if (mounted) setState(() {});
     }
   }
 
@@ -629,43 +646,41 @@ class _RecordingRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return RevealOnFocus(
-      child: Padding(
-        padding: const EdgeInsets.only(top: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(left: 60, bottom: 8),
-              child: Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                ),
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 60, bottom: 8),
+            child: Text(
+              title,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
               ),
             ),
-            SizedBox(
-              height: 160,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 60),
-                itemCount: items.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 12),
-                itemBuilder: (context, index) {
-                  final item = items[index];
-                  return _RecordingCard(
-                    item: item,
-                    imageUrl: item.imageUrl(imageApi),
-                    onFocused: () => onItemFocused(item),
-                    onTap: () => onItemTap(item),
-                  );
-                },
-              ),
+          ),
+          SizedBox(
+            height: 160,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 60),
+              itemCount: items.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 12),
+              itemBuilder: (context, index) {
+                final item = items[index];
+                return _RecordingCard(
+                  item: item,
+                  imageUrl: item.imageUrl(imageApi),
+                  onFocused: () => onItemFocused(item),
+                  onTap: () => onItemTap(item),
+                );
+              },
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -743,19 +758,7 @@ class _RecordingCardState extends State<_RecordingCard> with FocusStateMixin {
                             : null,
                       ),
                       clipBehavior: Clip.antiAlias,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          _buildImage(),
-                          Positioned(
-                            top: 6,
-                            left: 6,
-                            child: IncompleteRecordingBadge(
-                              itemId: widget.item.id,
-                            ),
-                          ),
-                        ],
-                      ),
+                      child: _buildImage(),
                     ),
                     const SizedBox(height: 5),
                     Text(

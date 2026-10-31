@@ -1,15 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:server_core/server_core.dart';
 
-/// A server date in local time, or null when the server has none.
-DateTime? _serverDate(Object? value) => parseServerDate(value)?.toLocal();
-
 class RecordingItem {
   final String id;
-
-  /// The timer that records this, for a scheduled item. Its [id] is the
-  /// program's, since the program carries the artwork.
-  final String? timerId;
   final String name;
   final String? channelName;
   final String? episodeTitle;
@@ -25,7 +18,6 @@ class RecordingItem {
 
   const RecordingItem({
     required this.id,
-    this.timerId,
     required this.name,
     this.channelName,
     this.episodeTitle,
@@ -40,42 +32,25 @@ class RecordingItem {
     required this.rawData,
   });
 
-  factory RecordingItem.fromJson(
-    Map<String, dynamic> json, {
-    String? timerId,
-  }) {
+  factory RecordingItem.fromJson(Map<String, dynamic> json) {
     return RecordingItem(
       id: json['Id']?.toString() ?? '',
-      timerId: timerId,
       name: json['Name'] as String? ?? '',
       channelName: json['ChannelName'] as String?,
       episodeTitle: json['EpisodeTitle'] as String?,
       seriesName: json['SeriesName'] as String?,
-      startDate: _serverDate(json['StartDate']),
-      endDate: _serverDate(json['EndDate']),
+      startDate: json['StartDate'] != null
+          ? DateTime.tryParse(json['StartDate'] as String)
+          : null,
+      endDate: json['EndDate'] != null
+          ? DateTime.tryParse(json['EndDate'] as String)
+          : null,
       overview: json['Overview'] as String?,
       imageTags: json['ImageTags'] as Map<String, dynamic>?,
       parentThumbItemId: json['ParentThumbItemId']?.toString(),
       parentThumbImageTag: json['ParentThumbImageTag'] as String?,
       seriesId: json['SeriesId']?.toString(),
       rawData: json,
-    );
-  }
-
-  /// A scheduled timer, shown as its program when the server includes one.
-  factory RecordingItem.fromTimer(TimerItem timer) {
-    final program = timer.programInfo;
-    if (program != null) {
-      return RecordingItem.fromJson(program, timerId: timer.id);
-    }
-    return RecordingItem(
-      id: timer.id,
-      timerId: timer.id,
-      name: timer.name,
-      channelName: timer.channelName,
-      startDate: timer.startDate,
-      endDate: timer.endDate,
-      rawData: timer.rawData,
     );
   }
 
@@ -133,23 +108,15 @@ class TimerItem {
       name: json['Name'] as String? ?? '',
       channelName: json['ChannelName'] as String?,
       seriesTimerId: json['SeriesTimerId']?.toString(),
-      startDate: _serverDate(json['StartDate']),
-      endDate: _serverDate(json['EndDate']),
+      startDate: json['StartDate'] != null
+          ? DateTime.tryParse(json['StartDate'] as String)
+          : null,
+      endDate: json['EndDate'] != null
+          ? DateTime.tryParse(json['EndDate'] as String)
+          : null,
       programInfo: json['ProgramInfo'] as Map<String, dynamic>?,
       rawData: json,
     );
-  }
-
-  /// `/LiveTv/Timers` returns every timer the server keeps, including
-  /// showings a series rule or the user cancelled and recordings that already
-  /// finished or failed. Only the rest will still record.
-  bool isUpcoming(DateTime now) {
-    final status = rawData['Status']?.toString();
-    if (status == 'Cancelled' || status == 'Completed' || status == 'Error') {
-      return false;
-    }
-    final end = endDate;
-    return end == null || end.isAfter(now);
   }
 }
 
@@ -190,6 +157,40 @@ class RecordingsViewModel extends ChangeNotifier {
     _focusedItem = item;
     notifyListeners();
   }
+
+  void clearFocusedItem() {
+    _focusedItem = null;
+    notifyListeners();
+  }
+
+  /// Deletes only a completed recording item. Scheduled timers are cancelled
+  /// through the timer API and must never reach this path.
+  Future<void> deleteRecording(RecordingItem item) async {
+    if (item.id.isEmpty ||
+        !_recordedItems.any((recording) => recording.id == item.id)) {
+      throw StateError('Not a recorded item');
+    }
+    await _client.itemsApi.deleteItem(item.id);
+
+    List<RecordingItem> withoutItem(List<RecordingItem> items) =>
+        items.where((recording) => recording.id != item.id).toList();
+
+    _recentRecordings = withoutItem(_recentRecordings);
+    _seriesRecordings = withoutItem(_seriesRecordings);
+    _movieRecordings = withoutItem(_movieRecordings);
+    _sportsRecordings = withoutItem(_sportsRecordings);
+    _kidsRecordings = withoutItem(_kidsRecordings);
+    if (_focusedItem?.id == item.id) _focusedItem = null;
+    notifyListeners();
+  }
+
+  Iterable<RecordingItem> get _recordedItems => <RecordingItem>[
+    ..._recentRecordings,
+    ..._seriesRecordings,
+    ..._movieRecordings,
+    ..._sportsRecordings,
+    ..._kidsRecordings,
+  ];
 
   Future<void> load() async {
     _state = RecordingsState.loading;
@@ -243,29 +244,30 @@ class RecordingsViewModel extends ChangeNotifier {
     }
   }
 
-  /// Re-reads only the Scheduled in Next 24 Hours row, after a timer changed.
-  Future<void> refreshScheduled() async {
-    await _loadScheduledTimers();
-    notifyListeners();
-  }
-
   Future<void> _loadScheduledTimers() async {
     try {
       final response = await _client.liveTvApi.getTimers();
       final items = (response['Items'] as List?) ?? [];
-      final now = DateTime.now();
-      final next24h = now.add(const Duration(days: 1));
+      final next24h = DateTime.now().add(const Duration(days: 1));
 
       _scheduledNext24h = items
           .cast<Map<String, dynamic>>()
           .map((json) => TimerItem.fromJson(json))
-          .where(
-            (t) =>
-                t.startDate != null &&
-                t.startDate!.isBefore(next24h) &&
-                t.isUpcoming(now),
-          )
-          .map(RecordingItem.fromTimer)
+          .where((t) => t.startDate != null && t.startDate!.isBefore(next24h))
+          .map((timer) {
+            final programData = timer.programInfo;
+            if (programData != null) {
+              return RecordingItem.fromJson(programData);
+            }
+            return RecordingItem(
+              id: timer.id,
+              name: timer.name,
+              channelName: timer.channelName,
+              startDate: timer.startDate,
+              endDate: timer.endDate,
+              rawData: timer.rawData,
+            );
+          })
           .toList();
     } catch (_) {}
   }
