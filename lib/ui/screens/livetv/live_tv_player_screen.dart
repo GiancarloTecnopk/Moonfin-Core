@@ -27,7 +27,6 @@ import '../../../preference/preference_constants.dart';
 import '../../../preference/user_preferences.dart';
 import '../../../util/clock_format.dart';
 import '../../../util/subtitle_track_logic.dart';
-import '../../../util/play_method_label.dart';
 import '../../../util/platform_detection.dart';
 import '../../../util/live_tv_recording.dart';
 import '../../../util/playback_time_label.dart';
@@ -39,6 +38,7 @@ import '../../widgets/playback/stream_info_dialog.dart';
 import '../../widgets/track_selector_dialog.dart';
 import '../../widgets/live_tv/channel_carousel_overlay.dart';
 import '../../widgets/live_tv/live_tv_recording_dialog.dart';
+import '../../widgets/live_tv/series_recording_dialog.dart';
 import '../../widgets/emby_premiere_dialog.dart';
 import '../../util/error_message.dart';
 import 'channel_tune_observer.dart';
@@ -1217,6 +1217,13 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
           case LiveTvRecordingAction.cancelSeries:
             await _client.liveTvApi.cancelSeriesTimer(recording.seriesTimerId!);
             message = l10n.seriesRecordingCancelled;
+          case LiveTvRecordingAction.changeSeries:
+            final changed = await changeSeriesRecordingEpisodes(
+              context: context,
+              liveTvApi: _client.liveTvApi,
+              seriesTimerId: recording.seriesTimerId!,
+            );
+            if (changed) message = l10n.seriesRecordingUpdated;
         }
       } catch (e) {
         if (isPremiereError(e) && mounted) {
@@ -1230,6 +1237,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
           LiveTvRecordingAction.cancelProgram => l10n.failedToCancelRecording,
           LiveTvRecordingAction.cancelSeries =>
             l10n.failedToCancelSeriesRecording,
+          LiveTvRecordingAction.changeSeries => l10n.failedToCancelSeriesRecording,
         };
       }
       await Future<void>.delayed(const Duration(milliseconds: 250));
@@ -1820,11 +1828,12 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     final l10n = AppLocalizations.of(context);
     final resolution = _manager.currentResolution;
     final streamPlayMethod = resolution?.playMethod;
-    final playMethod = playbackMethodLabel(
-      l10n: l10n,
-      playMethod: streamPlayMethod,
-      transcodingReasons: resolution?.transcodingReasons ?? const <String>[],
-    );
+    final playMethod = switch (streamPlayMethod?.name) {
+      'directPlay' => l10n.directPlay,
+      'directStream' => l10n.directStream,
+      'transcode' => l10n.transcoding,
+      _ => l10n.unknown,
+    };
     final backendLabel = _activeMedia3Backend != null
         ? 'Media3 (ExoPlayer)'
         : 'Media Kit (MPV)';
