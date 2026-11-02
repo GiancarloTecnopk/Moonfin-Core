@@ -4,10 +4,14 @@ param(
   [ValidateSet('x64', 'arm64')]
   [string]$Architecture = 'x64',
 
-  [switch]$Store
+  [switch]$Store,
+
+  # Package the REC desktop edition without replacing stock Moonfin.
+  [switch]$Rec
 )
 
 $ErrorActionPreference = 'Stop'
+if ($Rec -and $Store) { throw "REC desktop build does not support Store packaging." }
 
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $vcpkgTriplet = "$Architecture-windows"
@@ -286,7 +290,8 @@ function New-InnoScript {
     [string]$IconPath,
     [string]$ReleaseDir,
     [string]$IssPath,
-    [string]$Architecture = 'x64'
+    [string]$Architecture = 'x64',
+    [switch]$Rec
   )
 
   # Inno Setup 6.3+ architecture identifiers. 'arm64' produces a native ARM64
@@ -300,18 +305,23 @@ function New-InnoScript {
     $archesInstallIn64Bit = 'x64compatible'
   }
 
+  $displayName = if ($Rec) { 'Moonfin REC' } else { 'Moonfin' }
+  $installFolder = if ($Rec) { 'Moonfin REC' } else { 'Moonfin' }
+  # Distinct GUID: installing REC never replaces stock Moonfin's registration.
+  $appId = if ($Rec) { '{{EB9ABDB0-1CF9-418A-B915-CA130F5AEE6F}' } else { '{{2B684544-2B56-47BE-B52F-6F7A94BCA4E1}' }
+
   $iss = @"
-#define MyAppName "Moonfin"
+#define MyAppName "$displayName"
 #define MyAppVersion "$AppVersion"
-#define MyAppPublisher "Moonfin"
+#define MyAppPublisher "Moonfin REC"
 #define MyAppExeName "moonfin.exe"
 
 [Setup]
-AppId={{2B684544-2B56-47BE-B52F-6F7A94BCA4E1}
+AppId=$appId
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={autopf}\Moonfin
+DefaultDirName={autopf}\$installFolder
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=$OutputDir
@@ -358,7 +368,9 @@ if ($Store) {
 $appVersion = Get-AppVersion
 # x64 keeps the original "Moonfin_Windows_v<version>" name; arm64 follows the same
 # scheme with a "WindowsARM64" platform token.
-if ($Architecture -eq 'arm64') {
+if ($Rec) {
+  $installerBaseName = "MoonfinREC_Windows_v$appVersion"
+} elseif ($Architecture -eq 'arm64') {
   $installerBaseName = "Moonfin_WindowsARM64_v$appVersion"
 } else {
   $installerBaseName = "Moonfin_Windows_v$appVersion"
@@ -429,7 +441,7 @@ try {
     throw "Missing app icon: $iconPath"
   }
 
-  New-InnoScript -AppVersion $appVersion -InstallerBaseName $installerBaseName -OutputDir $outputDir -IconPath $iconPath -ReleaseDir $releaseDir -IssPath $issPath -Architecture $Architecture
+  New-InnoScript -AppVersion $appVersion -InstallerBaseName $installerBaseName -OutputDir $outputDir -IconPath $iconPath -ReleaseDir $releaseDir -IssPath $issPath -Architecture $Architecture -Rec:$Rec
 
   Write-Host "Building installer EXE..."
   Invoke-CheckedCommand -Name "ISCC" -FilePath $isccExe -Arguments @($issPath)
