@@ -12,9 +12,11 @@ class PlaybackQualityDiagnostics {
     int? selectedIndex,
   ) {
     Map<String, dynamic>? firstAudio;
+    Map<String, dynamic>? defaultAudio;
     for (final stream in streams) {
       if (stream['Type']?.toString().toLowerCase() != 'audio') continue;
       firstAudio ??= stream;
+      if (stream['IsDefault'] == true) defaultAudio ??= stream;
       if (selectedIndex == null) continue;
       final index = stream['Index'];
       final parsedIndex = index is int
@@ -22,7 +24,7 @@ class PlaybackQualityDiagnostics {
           : int.tryParse(index?.toString() ?? '');
       if (parsedIndex == selectedIndex) return stream;
     }
-    return firstAudio;
+    return defaultAudio ?? firstAudio;
   }
 
   /// A conservative explanation of why a stream was delivered this way.
