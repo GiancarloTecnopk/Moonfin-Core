@@ -24,6 +24,18 @@ void main() {
         'aac',
       );
     });
+    test('resolves Jellyfin default audio when no explicit track is set', () {
+      expect(
+        PlaybackQualityDiagnostics.selectedAudioStream(
+          [
+            {'Index': 1, 'Type': 'Audio', 'Codec': 'aac'},
+            {'Index': 2, 'Type': 'Audio', 'Codec': 'ac3', 'IsDefault': true},
+          ],
+          null,
+        )?['Codec'],
+        'ac3',
+      );
+    });
     test('accepts Jellyfin string stream indexes', () {
       expect(
         PlaybackQualityDiagnostics.selectedAudioStream(
