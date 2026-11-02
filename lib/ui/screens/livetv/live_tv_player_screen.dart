@@ -1327,7 +1327,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
     if (_streamsOfType('Audio').length > 1) _tvAudioFocus,
     if (_hasSubtitleChoices) _tvSubtitleFocus,
     _tvBitrateFocus,
-    if (PlatformDetection.isTV || _canRecordCurrentProgram) _tvRecordFocus,
+    if (PlatformDetection.isTV || PlatformDetection.isWindows || _canRecordCurrentProgram) _tvRecordFocus,
     _tvZoomFocus,
     _tvPlaybackInfoFocus,
   ];
@@ -2684,7 +2684,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen>
             tooltip: l10n.bitrate,
             onPressed: _showBitrateSelector,
           ),
-          if (PlatformDetection.isTV || _canRecordCurrentProgram) ...[
+          if (PlatformDetection.isTV || PlatformDetection.isWindows || _canRecordCurrentProgram) ...[
             const SizedBox(width: AppSpacing.spaceSm),
             _buildOverlayControlButton(
               focusNode: PlatformDetection.isTV ? _tvRecordFocus : null,
