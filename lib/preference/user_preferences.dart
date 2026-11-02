@@ -2584,7 +2584,13 @@ class UserPreferences extends ChangeNotifier {
 
   static final hardwareDecoding = Preference(
     key: 'hardware_decoding',
-    defaultValue: PlatformDetection.isAndroid || PlatformDetection.isIOS,
+    // Enable GPU decoding by default on desktop Windows as well: 4K HEVC
+    // and HDR streams otherwise use the software-only decoder on a clean install.
+    // Existing user choices still win; libmpv can fall back to software when
+    // a hardware decoder cannot handle a particular codec/profile.
+    defaultValue: PlatformDetection.isAndroid ||
+        PlatformDetection.isIOS ||
+        PlatformDetection.isWindows,
   );
 
   static final playbackEnginePreference = EnumPreference(
