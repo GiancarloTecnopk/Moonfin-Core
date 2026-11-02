@@ -101,3 +101,41 @@ jobs:
           path: MoonfinREC_3.0.0_MIGRATION_TEST_signed.apk
           if-no-files-found: error
           retention-days: 14
+
+  build-rec-3-windows:
+    name: Build Moonfin REC 3.0 Windows x64 installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+
+      - name: Build isolated Moonfin REC Windows installer
+        shell: pwsh
+        run: .\\build-windows.ps1 -Rec
+
+      - name: Verify installer is present
+        shell: pwsh
+        run: |
+          $installer = "MoonfinREC_Windows_v3.0.0.exe"
+          if (!(Test-Path $installer)) {
+            throw "Missing Moonfin REC Windows installer: $installer"
+          }
+          if ((Get-Item $installer).Length -lt 1048576) {
+            throw "Installer size too small: $installer"
+          }
+          Write-Host "Moonfin REC 3.0 Windows x64 installer is ready."
+
+      - name: Upload Moonfin REC 3.0 Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoonfinREC-3.0.0-Windows-x64-installer-unsigned
+          path: MoonfinREC_Windows_v3.0.0.exe
+          if-no-files-found: error
+          retention-days: 14
