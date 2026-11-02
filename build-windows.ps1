@@ -307,13 +307,15 @@ function New-InnoScript {
 
   $displayName = if ($Rec) { 'Moonfin REC' } else { 'Moonfin' }
   $installFolder = if ($Rec) { 'Moonfin REC' } else { 'Moonfin' }
+  $publisher = if ($Rec) { 'Moonfin REC' } else { 'Moonfin' }
+  $protocolScheme = if ($Rec) { 'moonfinrec' } else { 'moonfin' }
   # Distinct GUID: installing REC never replaces stock Moonfin's registration.
   $appId = if ($Rec) { '{{EB9ABDB0-1CF9-418A-B915-CA130F5AEE6F}' } else { '{{2B684544-2B56-47BE-B52F-6F7A94BCA4E1}' }
 
   $iss = @"
 #define MyAppName "$displayName"
 #define MyAppVersion "$AppVersion"
-#define MyAppPublisher "Moonfin REC"
+#define MyAppPublisher "$publisher"
 #define MyAppExeName "moonfin.exe"
 
 [Setup]
@@ -350,7 +352,7 @@ Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Registry]
-Root: HKCU; Subkey: "Software\Classes\moonfin"; Flags: dontcreatekey uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\$protocolScheme"; Flags: dontcreatekey uninsdeletekey
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
