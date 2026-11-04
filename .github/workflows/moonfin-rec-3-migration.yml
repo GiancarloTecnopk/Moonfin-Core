@@ -17,6 +17,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Android's release/AOT build needs substantial temporary disk space.
+      # Remove only unused preinstalled SDKs; keep Android SDK/NDK, Java and
+      # Flutter intact. Otherwise armv7 app.so may fail with ENOSPC.
+      - name: Free GitHub runner disk space for Android AOT
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Before cleanup:"
+          df -h .
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/powershell \
+            /usr/local/lib/android/sdk/system-images
+          if command -v docker >/dev/null 2>&1; then
+            docker system prune --all --force >/dev/null 2>&1 || true
+          fi
+          echo "After cleanup:"
+          df -h .
+          available_kb=$(df -Pk . | awk 'NR==2 {print $4}')
+          if (( available_kb < 8 * 1024 * 1024 )); then
+            echo "::error::Less than 8 GiB available before Android build."
+            exit 1
+          fi
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
