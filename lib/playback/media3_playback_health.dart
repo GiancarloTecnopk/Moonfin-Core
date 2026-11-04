@@ -43,7 +43,7 @@ class Media3PlaybackHealth {
     required bool isPlaying,
     required bool isBuffering,
   }) {
-    _aheadMs = (bufferedPositionMs - positionMs).clamp(0, 2147483647);
+    _aheadMs = (bufferedPositionMs - positionMs).clamp(0, 2147483647).toInt();
     // Initial preroll is NOT a rebuffer. User pauses and initial file loading
     // must also be excluded. The transition is counted only once.
     if (_firstFrameRendered &&
