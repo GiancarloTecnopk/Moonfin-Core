@@ -335,8 +335,26 @@ private class VsyncPacingAdapterFactory(
     private val delegate: MediaCodecAdapter.Factory,
     private val display: Display?,
 ) : MediaCodecAdapter.Factory {
-    override fun createAdapter(configuration: MediaCodecAdapter.Configuration): MediaCodecAdapter =
-        VsyncPacingAdapter(delegate.createAdapter(configuration), display)
+    override fun createAdapter(configuration: MediaCodecAdapter.Configuration): MediaCodecAdapter {
+        val codec = configuration.format.sampleMimeType
+        val inner = delegate.createAdapter(configuration)
+        if (!HevcPacingPolicy.useCustomVsyncPacing(codec)) {
+            // HEVC Main/Main10: keep Media3's native video frame release
+            // schedule. The custom one-vsync delay can produce visible
+            // periodic pauses on Amlogic decoders even with a full buffer.
+            // This is isolated to HEVC and does not change decoder or
+            // server Direct Play/transcoding decisions.
+            Media3Bridge.emitEvent(
+                mapOf(
+                    "event" to "framePacing",
+                    "mode" to "media3Native",
+                    "codec" to (codec ?: "unknown"),
+                ),
+            )
+            return inner
+        }
+        return VsyncPacingAdapter(inner, display)
+    }
 }
 
 /**
@@ -3230,6 +3248,13 @@ class Media3VideoView(
                 "event" to "frameRate",
                 "detectedFrameRate" to detectedFrameRate.toDouble(),
                 "appliedFrameRate" to appliedFrameRate?.toDouble(),
+                // Even with automatic switching disabled, show the current
+                // actual output refresh. E.g. 23.976 fps on 60 Hz can have
+                // cadence judder with zero reported dropped frames.
+                "displayRefreshRateHz" to runCatching {
+                    (context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager)
+                        .getDisplay(Display.DEFAULT_DISPLAY)?.refreshRate?.toDouble()
+                }.getOrNull(),
                 "appliedDisplayModeId" to appliedModeId,
                 "enabled" to enabled,
                 "behavior" to frameRateSwitchingBehavior,
