@@ -6,6 +6,7 @@ on:
       - moonfin-rec-3.0-migration-20261031
       - moonfin-rec-3.0-opt-android-windows-20261102
       - moonfin-rec-3.0-hevc-diagnostics-20261104
+      - moonfin-rec-3.0-hevc-pacing-test-20261104
   workflow_dispatch:
 
 permissions:
@@ -80,7 +81,7 @@ jobs:
           TV_VERSION=$(awk '/^  android_tv_version:/{print $2}' pubspec.yaml)
           TV_BUILD_NUMBER=$(awk '/^  android_tv_build_number:/{print $2}' pubspec.yaml)
           test "$TV_VERSION" = "3.0.0"
-          test "$TV_BUILD_NUMBER" = "2000033"
+          test "$TV_BUILD_NUMBER" = "2000034"
           flutter gen-l10n
           flutter build apk --release --flavor androidTv \
             --build-name "$TV_VERSION" --build-number "$TV_BUILD_NUMBER" \
@@ -100,7 +101,7 @@ jobs:
           BUILD_TOOLS=$(find "$SDK_DIR/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
           "$BUILD_TOOLS/aapt" dump badging "$APK" | tee dts-apk-identity.txt
           grep -F "package: name='org.moonfin.androidtv.rec3test'" dts-apk-identity.txt
-          grep -F "versionCode='2000033'" dts-apk-identity.txt
+          grep -F "versionCode='2000034'" dts-apk-identity.txt
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee dts-apk-signature.txt
           grep -Fi "$EXPECTED_CERT_SHA256" dts-apk-signature.txt
           echo "Verified REC package, upgraded version and original signing certificate." >> "$GITHUB_STEP_SUMMARY"
@@ -108,12 +109,13 @@ jobs:
       - name: Publish signed Moonfin REC 3.0 test APK
         uses: actions/upload-artifact@v4
         with:
-          name: MoonfinREC-3.0.0-HEVC-DIAG-Android-signed
+          name: MoonfinREC-3.0.0-HEVC-PACING-TEST-Android-signed
           path: MoonfinREC_3.0.0_MIGRATION_TEST_signed.apk
           if-no-files-found: error
           retention-days: 14
 
   build-rec-3-windows:
+    if: github.ref_name != 'moonfin-rec-3.0-hevc-pacing-test-20261104'
     name: Build Moonfin REC 3.0 Windows x64 installer
     runs-on: windows-latest
     steps:
