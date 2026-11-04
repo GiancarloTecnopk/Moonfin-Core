@@ -1703,6 +1703,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         resolution?.mediaSourceId ?? mediaSource?['Id']?.toString(),
       ),
       hdrOutput: _hdrOutputRange(hdrTonemapped: hdrTonemapped),
+      media3DiagnosticRows:
+          _activeMedia3Backend?.technicalDiagnosticRows ?? const [],
     );
   }
 
