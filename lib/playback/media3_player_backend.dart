@@ -12,6 +12,7 @@ import '../preference/user_preferences.dart';
 import '../util/platform_detection.dart';
 
 import 'device_profile_builder.dart';
+import 'media3_playback_health.dart';
 import 'known_defects.dart';
 import 'media3_letterbox_crop.dart';
 import 'server_transcode_capabilities.dart';
@@ -208,6 +209,12 @@ class Media3PlayerBackend extends PlayerBackend
   bool? _playWhenReady;
   String? _lastFrameRateLine;
 
+  // Read-only counters for playback information, reset for each new source.
+  final Media3PlaybackHealth _playbackHealth = Media3PlaybackHealth();
+
+  List<Map<String, dynamic>> get technicalDiagnosticRows =>
+      _playbackHealth.technicalRows;
+
   final _positionStream = StreamController<Duration>.broadcast();
   final _durationStream = StreamController<Duration>.broadcast();
   final _bufferStream = StreamController<Duration>.broadcast();
@@ -281,6 +288,12 @@ class Media3PlayerBackend extends PlayerBackend
         _buffer = Duration(milliseconds: _toInt(map['bufferedMs']));
         _isPlaying = _toBool(map['isPlaying']);
         _isBuffering = _toBool(map['isBuffering']);
+        _playbackHealth.state(
+          positionMs: _position.inMilliseconds,
+          bufferedPositionMs: _buffer.inMilliseconds,
+          isPlaying: _isPlaying,
+          isBuffering: _isBuffering,
+        );
         _setSubtitleLoading(_toBool(map['isSubtitleLoading']));
         // The player's own intent, which isPlaying folds away. Absent from an
         // older native side, so it stays null rather than guessing false.
@@ -434,14 +447,17 @@ class Media3PlayerBackend extends PlayerBackend
         _onTunnelingDiscontinuity();
       case 'firstFrameRendered':
         _sawFirstFrame = true;
+        _playbackHealth.firstFrameRendered();
         _diag('Media3: first frame rendered @ ${_toInt(map['positionMs'])}ms');
       case 'droppedFrames':
+        _playbackHealth.droppedFrames(_toInt(map['count']));
         _diag(
           'Media3: dropped ${_toInt(map['count'])} video frames in '
           '${_toInt(map['elapsedMs'])}ms',
           level: LogLevel.warning,
         );
       case 'audioUnderrun':
+        _playbackHealth.audioUnderrun();
         _diag(
           'Media3: audio underrun (buffer ${_toInt(map['bufferSizeMs'])}ms, '
           '${_toInt(map['elapsedMs'])}ms since last feed)',
@@ -555,6 +571,7 @@ class Media3PlayerBackend extends PlayerBackend
           'lowRam=${map['lowRam'] == true})',
         );
       case 'videoDecoderInit':
+        _playbackHealth.videoDecoder(map['decoder']?.toString() ?? '');
         _diag('Media3: video decoder initialized (${map['decoder'] ?? ''})');
       case 'audioDecoderInit':
         _diag('Media3: audio decoder initialized (${map['decoder'] ?? ''})');
@@ -587,6 +604,7 @@ class Media3PlayerBackend extends PlayerBackend
   void _onFrameRateEvent(Map<String, dynamic> map) {
     final detected = (map['detectedFrameRate'] as num?)?.toDouble();
     final applied = (map['appliedFrameRate'] as num?)?.toDouble();
+    _playbackHealth.frameRate(content: detected, output: applied);
     final behavior = map['behavior']?.toString() ?? '';
     final content = detected == null
         ? 'content of unknown frame rate'
@@ -813,6 +831,7 @@ class Media3PlayerBackend extends PlayerBackend
   }
 
   void _resetPlaybackWatchdogs(String itemLabel) {
+    _playbackHealth.reset();
     _watchdogItemLabel = itemLabel;
     _sawFirstFrame = false;
     _firstFrameWarned = false;
