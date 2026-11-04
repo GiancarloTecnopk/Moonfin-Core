@@ -75,7 +75,7 @@ jobs:
 
       - name: Build signed Moonfin REC 3.0 isolated test APK
         env:
-          MOONFIN_TEST_ID_SUFFIX: .rec3test
+          MOONFIN_TEST_ID_SUFFIX: .rec3hevc
         run: |
           set -eu
           TV_VERSION=$(awk '/^  android_tv_version:/{print $2}' pubspec.yaml)
@@ -100,7 +100,7 @@ jobs:
           SDK_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
           BUILD_TOOLS=$(find "$SDK_DIR/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
           "$BUILD_TOOLS/aapt" dump badging "$APK" | tee dts-apk-identity.txt
-          grep -F "package: name='org.moonfin.androidtv.rec3test'" dts-apk-identity.txt
+          grep -F "package: name='org.moonfin.androidtv.rec3hevc'" dts-apk-identity.txt
           grep -F "versionCode='2000034'" dts-apk-identity.txt
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee dts-apk-signature.txt
           grep -Fi "$EXPECTED_CERT_SHA256" dts-apk-signature.txt
@@ -109,7 +109,7 @@ jobs:
       - name: Publish signed Moonfin REC 3.0 test APK
         uses: actions/upload-artifact@v4
         with:
-          name: MoonfinREC-3.0.0-HEVC-PACING-TEST-Android-signed
+          name: MoonfinREC-3.0.0-HEVC-PACING-AB-SEPARATA-Android-signed
           path: MoonfinREC_3.0.0_MIGRATION_TEST_signed.apk
           if-no-files-found: error
           retention-days: 14
