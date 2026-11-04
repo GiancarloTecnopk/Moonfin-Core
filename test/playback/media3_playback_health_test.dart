@@ -36,9 +36,9 @@ void main() {
     health.firstFrameRendered();
     health.state(positionMs: 7000, bufferedPositionMs: 47000,
         isPlaying: true, isBuffering: false);
-    health.droppedFrames(12);
-    health.droppedFrames(3);
-    health.droppedFrames(-1);
+    health.recordDroppedFrames(12);
+    health.recordDroppedFrames(3);
+    health.recordDroppedFrames(-1);
     health.videoDecoder('OMX.MTK.VIDEO.DECODER.HEVC');
     health.frameRate(content: 23.976, output: 60.0);
     expect(health.rebufferCount, 0);
@@ -58,7 +58,7 @@ void main() {
     health.firstFrameRendered();
     health.state(positionMs: 1000, bufferedPositionMs: 5000,
         isPlaying: true, isBuffering: false);
-    health.droppedFrames(8);
+    health.recordDroppedFrames(8);
     health.audioUnderrun();
     health.videoDecoder('old-codec');
     health.reset();

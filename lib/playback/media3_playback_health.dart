@@ -57,7 +57,7 @@ class Media3PlaybackHealth {
     _previousPlaying = isPlaying;
   }
 
-  void droppedFrames(int count) {
+  void recordDroppedFrames(int count) {
     if (count > 0) _droppedFrames += count;
   }
 

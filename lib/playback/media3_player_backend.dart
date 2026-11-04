@@ -450,7 +450,7 @@ class Media3PlayerBackend extends PlayerBackend
         _playbackHealth.firstFrameRendered();
         _diag('Media3: first frame rendered @ ${_toInt(map['positionMs'])}ms');
       case 'droppedFrames':
-        _playbackHealth.droppedFrames(_toInt(map['count']));
+        _playbackHealth.recordDroppedFrames(_toInt(map['count']));
         _diag(
           'Media3: dropped ${_toInt(map['count'])} video frames in '
           '${_toInt(map['elapsedMs'])}ms',
