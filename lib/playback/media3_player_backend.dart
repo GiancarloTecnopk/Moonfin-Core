@@ -570,6 +570,9 @@ class Media3PlayerBackend extends PlayerBackend
           '(heap limit ${_toInt(map['maxHeapBytes']) ~/ 1048576}MB, '
           'lowRam=${map['lowRam'] == true})',
         );
+      case 'framePacing':
+        _diag('Media3: frame pacing ${map['mode'] ?? ''} '
+            'for ${map['codec'] ?? 'unknown'}');
       case 'videoDecoderInit':
         _playbackHealth.videoDecoder(map['decoder']?.toString() ?? '');
         _diag('Media3: video decoder initialized (${map['decoder'] ?? ''})');
@@ -604,7 +607,8 @@ class Media3PlayerBackend extends PlayerBackend
   void _onFrameRateEvent(Map<String, dynamic> map) {
     final detected = (map['detectedFrameRate'] as num?)?.toDouble();
     final applied = (map['appliedFrameRate'] as num?)?.toDouble();
-    _playbackHealth.frameRate(content: detected, output: applied);
+    final displayHz = (map['displayRefreshRateHz'] as num?)?.toDouble();
+    _playbackHealth.frameRate(content: detected, output: applied ?? displayHz);
     final behavior = map['behavior']?.toString() ?? '';
     final content = detected == null
         ? 'content of unknown frame rate'
