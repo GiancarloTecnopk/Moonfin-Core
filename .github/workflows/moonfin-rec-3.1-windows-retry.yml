@@ -1,0 +1,49 @@
+name: Moonfin REC 3.1 RC1 Windows x64 retry after Silo API correction
+on:
+  push:
+    branches:
+      - moonfin-rec-3.1-integration-20261114
+    paths:
+      - .github/workflows/moonfin-rec-3.1-windows-retry.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Moonfin REC 3.1.0 Windows x64 RC1 installer
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+      - name: Apply original REC branding
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check Pillow
+          python scripts/apply_rec_branding.py --windows
+      - name: Build Moonfin REC Windows x64 installer
+        shell: pwsh
+        run: .\build-windows.ps1 -Rec
+      - name: Check installer output
+        shell: pwsh
+        run: |
+          $path = 'MoonfinREC_Windows_v3.1.0.exe'
+          if (!(Test-Path $path)) { throw "Missing REC Windows installer: $path" }
+          if ((Get-Item $path).Length -lt 1048576) { throw 'Installer appears truncated' }
+      - name: Publish Windows x64 candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoonfinREC-3.1.0-RC1-Windows-x64-installer-unsigned
+          path: MoonfinREC_Windows_v3.1.0.exe
+          if-no-files-found: error
+          retention-days: 14
