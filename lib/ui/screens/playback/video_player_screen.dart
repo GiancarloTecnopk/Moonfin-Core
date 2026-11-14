@@ -1830,6 +1830,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         final Media3PlayerBackend media3 => media3.playbackStatus,
         _ => null,
       },
+      media3DiagnosticRows:
+          _activeMedia3Backend?.technicalDiagnosticRows ?? const [],
     );
   }
 
