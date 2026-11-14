@@ -43,6 +43,7 @@ List<Map<String, dynamic>> buildPlaybackInfoSections({
   String? audioRoute,
   String? hdrOutput,
   Media3PlaybackStatus? nativeStatus,
+  List<Map<String, dynamic>> media3DiagnosticRows = const [],
 }) {
   final download = offline || (resolution?.isLocalMedia ?? false);
   final query = _lowerQuery(resolution?.streamUrl);
@@ -471,6 +472,7 @@ List<Map<String, dynamic>> buildPlaybackInfoSections({
       if (reasons.isNotEmpty) _row(l10n.transcodeReasons, reasons.join(', ')),
       if (_text(audioRoute) case final value?)
         _row(l10n.playbackInfoAudioRoute, value),
+      ...media3DiagnosticRows,
     ],
   });
 
