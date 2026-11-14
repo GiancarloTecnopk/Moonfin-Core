@@ -1,0 +1,55 @@
+name: Moonfin REC 3.0 stable Release - Add SHA256 checksums
+on:
+  push:
+    branches: [moonfin-rec-3.1-integration-20261114]
+    paths: [.github/workflows/moonfin-rec-3.0-stable-checksums.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download the original stable 3.0 assets and verify Android identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p stable
+          gh release download moonfin-rec-v3.0.0-build2000035 \
+            --repo "$GITHUB_REPOSITORY" \
+            -p MoonfinREC_3.0.0_AndroidTV_signed.apk \
+            -p MoonfinREC_Windows_v3.0.0.exe \
+            -D stable
+          test -s stable/MoonfinREC_3.0.0_AndroidTV_signed.apk
+          test -s stable/MoonfinREC_Windows_v3.0.0.exe
+          bt="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$bt/aapt" dump badging stable/MoonfinREC_3.0.0_AndroidTV_signed.apk |
+            grep -F "package: name='org.moonfin.androidtv.rec'" |
+            grep -F "versionCode='2000035'"
+          "$bt/apksigner" verify --verbose --print-certs stable/MoonfinREC_3.0.0_AndroidTV_signed.apk |
+            grep -Fi 'DA87543C1F1DD8CA6CBC13890A5D54A2E0995D78A8AD282808D4E4D94AC9B099'
+          python3 - <<'PY'
+          from pathlib import Path
+          assert Path('stable/MoonfinREC_Windows_v3.0.0.exe').open('rb').read(2) == b'MZ'
+          PY
+          (cd stable && sha256sum *.apk *.exe > SHA256SUMS.txt)
+      - name: Add checksum manifest without modifying existing stable binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag=moonfin-rec-v3.0.0-build2000035
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets \
+              --jq '.assets[].name' | grep -Fxq SHA256SUMS.txt; then
+            echo 'Existing checksums preserved, no changes to stable release'
+          else
+            gh release upload "$tag" stable/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY"
+          fi
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url,assets \
+            --jq '{url:.url,assets:[.assets[].name]}' | tee -a "$GITHUB_STEP_SUMMARY"
