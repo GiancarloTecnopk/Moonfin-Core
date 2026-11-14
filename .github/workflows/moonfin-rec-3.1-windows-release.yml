@@ -1,0 +1,65 @@
+name: Publish Moonfin REC 3.1 RC1 Windows x64 installer
+on:
+  push:
+    branches:
+      - moonfin-rec-3.1-integration-20261114
+    paths:
+      - .github/workflows/moonfin-rec-3.1-windows-release.yml
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish-windows-rc:
+    name: Publish existing successful Windows installer as GitHub prerelease asset
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Download verified Windows artifact from successful run
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 43585167369
+          github-token: ${{ github.token }}
+          repository: GiancarloTecnopk/Moonfin-Core
+          name: MoonfinREC-3.1.0-RC1-Windows-x64-installer-unsigned
+          path: ./release-assets
+
+      - name: Verify installer name and binary header
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXE=release-assets/MoonfinREC_Windows_v3.1.0.exe
+          test -s "$EXE"
+          test "$(stat -c %s "$EXE")" -gt 1048576
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('release-assets/MoonfinREC_Windows_v3.1.0.exe')
+          assert path.open('rb').read(2) == b'MZ', "Expected Windows PE executable"
+          print(f"Verified Windows installer: {path}, {path.stat().st_size} bytes")
+          PY
+          sha256sum "$EXE" | tee release-assets/SHA256SUMS.txt
+
+      - name: Publish direct-download GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag=moonfin-rec-v3.1.0-rc1-windows
+          repo="$GITHUB_REPOSITORY"
+          exe=release-assets/MoonfinREC_Windows_v3.1.0.exe
+          sums=release-assets/SHA256SUMS.txt
+          if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
+            gh release upload "$tag" "$exe" "$sums" --repo "$repo" --clobber
+          else
+            gh release create "$tag" "$exe" "$sums" \
+              --repo "$repo" \
+              --target "$GITHUB_SHA" \
+              --title "Moonfin REC 3.1.0 RC1 - Windows x64" \
+              --notes "Windows x64 installer for Moonfin REC 3.1.0 RC1, built successfully in Actions run #43585167369. Uses official Moonfin 3.1 graphics while retaining REC functions. Installer is not digitally signed. This is an RC for testing, not a final production release. Existing REC 3.0 sources and releases remain unchanged." \
+              --prerelease
+          fi
+          gh release view "$tag" --repo "$repo" --json url,isPrerelease,assets \
+            --jq '{url:.url,prerelease:.isPrerelease,assets:[.assets[].name]}' | tee -a "$GITHUB_STEP_SUMMARY"
