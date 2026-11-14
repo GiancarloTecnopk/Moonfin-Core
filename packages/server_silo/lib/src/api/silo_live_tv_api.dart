@@ -71,6 +71,16 @@ class SiloLiveTvApi implements LiveTvApi {
   @override
   Future<void> createTimer(String programId) => _unsupported();
 
+  // REC manual recording is unsupported on Silo (no Live TV/DVR), but the
+  // shared LiveTvApi contract must still be implemented for AOT compilation.
+  @override
+  Future<void> createChannelTimer({
+    required String channelId,
+    required String name,
+    required DateTime startDate,
+    required DateTime endDate,
+  }) => _unsupported();
+
   @override
   Future<void> createSeriesTimer(
     String programId, {
