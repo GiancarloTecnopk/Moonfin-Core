@@ -10,6 +10,10 @@ on:
       - pubspec.yaml
   workflow_dispatch:
 
+concurrency:
+  group: moonfin-rec31-functional-port
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
