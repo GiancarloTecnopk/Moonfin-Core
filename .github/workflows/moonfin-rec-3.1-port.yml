@@ -1,0 +1,40 @@
+name: Moonfin REC 3.1 - Port functions with official 3.1 interface
+
+on:
+  push:
+    branches:
+      - moonfin-rec-3.1-integration-20261114
+    paths:
+      - .github/workflows/moonfin-rec-3.1-port.yml
+      - scripts/port_rec31_functions.py
+      - pubspec.yaml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  port-rec-functions:
+    name: Three-way merge REC 3.0 functions into Moonfin 3.1
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout official Moonfin 3.1 integration branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch only our preserved REC 3.0 functional baseline
+        run: git fetch --no-tags origin moonfin-rec-3.0-final-20261104:refs/remotes/origin/moonfin-rec-3.0-final-20261104
+
+      - name: Apply and commit conflict-free functional changes
+        run: python3 scripts/port_rec31_functions.py
+
+      - name: Archive merge conflicts for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoonfinREC-3.1-integration-conflict-report
+          path: rec31-merge-report/
+          if-no-files-found: warn
+          retention-days: 14
