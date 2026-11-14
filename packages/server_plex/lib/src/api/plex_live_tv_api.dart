@@ -546,6 +546,16 @@ class PlexLiveTvApi implements LiveTvApi {
   @override
   Future<void> createTimer(String programId) => _record(programId);
 
+  /// Plex DVR recordings require a guide airing; EPG-free channel timers
+  /// are supported only by backends that expose that capability.
+  @override
+  Future<void> createChannelTimer({
+    required String channelId,
+    required String name,
+    required DateTime startDate,
+    required DateTime endDate,
+  }) => throw UnsupportedError('Plex does not support recording without EPG');
+
   @override
   Future<void> createSeriesTimer(
     String programId, {

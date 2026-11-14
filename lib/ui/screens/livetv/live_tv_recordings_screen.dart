@@ -35,6 +35,7 @@ class _LiveTvRecordingsScreenState extends State<LiveTvRecordingsScreen> {
   late final ScheduleViewModel _scheduleVm;
   late final SeriesRecordingsViewModel _seriesVm;
   _RecordingsTab _activeTab = _RecordingsTab.recordings;
+  bool _deletingRecording = false;
 
   @override
   void initState() {
@@ -152,6 +153,17 @@ class _LiveTvRecordingsScreenState extends State<LiveTvRecordingsScreen> {
                   onPressed: () =>
                       setState(() => _activeTab = _RecordingsTab.series),
                 ),
+                if (_activeTab == _RecordingsTab.recordings &&
+                    _vm.focusedItem != null)
+                  _RecordingsPillButton(
+                    icon: Icons.delete_outline_rounded,
+                    label: _deletingRecording
+                        ? l10n.pleaseWait
+                        : l10n.delete,
+                    onPressed: _deletingRecording
+                        ? null
+                        : () => _deleteRecording(_vm.focusedItem!),
+                  ),
                 Padding(
                   padding: const EdgeInsetsDirectional.only(start: 4),
                   child: _RecordingsPillButton(
@@ -398,6 +410,57 @@ class _LiveTvRecordingsScreenState extends State<LiveTvRecordingsScreen> {
           );
         }
       }
+    }
+  }
+
+  Future<void> _deleteRecording(RecordingItem item) async {
+    if (_deletingRecording) return;
+    _deletingRecording = true;
+    if (mounted) setState(() {});
+    final l10n = AppLocalizations.of(context);
+    try {
+      final confirmed = await showFocusRestoringDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog.adaptive(
+          backgroundColor: const Color(0xFF1A1A2E),
+          title: Text(
+            l10n.deleteRecordingTitle,
+            style: const TextStyle(color: Colors.white),
+          ),
+          content: Text(
+            l10n.deleteConfirmMessage(item.name),
+            style: const TextStyle(color: Colors.white),
+          ),
+          actions: [
+            adaptiveDialogAction(
+              autofocus: true,
+              onPressed: () =>
+                  Navigator.of(ctx, rootNavigator: true).pop(false),
+              child: Text(l10n.cancel),
+            ),
+            TextButton(
+              onPressed: () =>
+                  Navigator.of(ctx, rootNavigator: true).pop(true),
+              style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+              child: Text(l10n.delete),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      await _vm.deleteRecording(item);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.recordingDeleted)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.failedToDeleteItem)),
+      );
+    } finally {
+      _deletingRecording = false;
+      if (mounted) setState(() {});
     }
   }
 

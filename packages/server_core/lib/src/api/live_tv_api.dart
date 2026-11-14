@@ -60,6 +60,15 @@ abstract class LiveTvApi {
 
   Future<void> createTimer(String programId);
 
+  /// Fixed-duration channel recording without EPG. The default allows
+  /// servers without this feature to stay compatible with the API.
+  Future<void> createChannelTimer({
+    required String channelId,
+    required String name,
+    required DateTime startDate,
+    required DateTime endDate,
+  }) => throw UnsupportedError('Channel recording without EPG not supported');
+
   /// Records every showing of a program's series, not just this one.
   /// [settings] replaces fields of the server's defaults for the new rule,
   /// such as `RecordNewOnly`.

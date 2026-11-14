@@ -17,7 +17,7 @@ bool IsPackaged() {
          APPMODEL_ERROR_NO_PACKAGE;
 }
 
-// Registers the moonfin:// scheme for the current user, pointing at this
+// Registers the moonfinrec:// scheme for the current user, pointing at this
 // executable. Written on every launch so a moved or updated install keeps
 // working. HKCU needs no elevation and no installer step.
 void RegisterMoonfinScheme() {
@@ -28,12 +28,12 @@ void RegisterMoonfinScheme() {
   std::wstring command = L"\"" + std::wstring(exe_path) + L"\" \"%1\"";
 
   HKEY scheme_key;
-  if (::RegCreateKeyEx(HKEY_CURRENT_USER, L"Software\\Classes\\moonfin", 0,
+  if (::RegCreateKeyEx(HKEY_CURRENT_USER, L"Software\\Classes\\moonfinrec", 0,
                        nullptr, 0, KEY_WRITE, nullptr, &scheme_key,
                        nullptr) != ERROR_SUCCESS) {
     return;
   }
-  const wchar_t description[] = L"URL:Moonfin";
+  const wchar_t description[] = L"URL:Moonfin REC";
   ::RegSetValueEx(scheme_key, nullptr, 0, REG_SZ,
                   reinterpret_cast<const BYTE *>(description),
                   sizeof(description));
@@ -90,7 +90,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 720);
-  if (!window.Create(L"Moonfin", origin, size)) {
+  if (!window.Create(L"Moonfin REC", origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

@@ -7,6 +7,7 @@ import 'package:playback_core/playback_core.dart';
 import '../data/services/log_service.dart';
 import '../util/platform_detection.dart';
 import 'audio_capability_profile.dart';
+import 'playback_quality_diagnostics.dart';
 
 class PlaybackProfileDiagnostics {
   PlaybackProfileDiagnostics._();
@@ -28,7 +29,10 @@ class PlaybackProfileDiagnostics {
   }) {
     final resolution = context.resolution;
     final videoStream = _firstStreamOfType(resolution.mediaStreams, 'Video');
-    final audioStream = _firstStreamOfType(resolution.mediaStreams, 'Audio');
+    final audioStream = PlaybackQualityDiagnostics.selectedAudioStream(
+      resolution.mediaStreams,
+      context.audioStreamIndex,
+    );
     final subtitleStream = _firstStreamOfType(
       resolution.mediaStreams,
       'Subtitle',
@@ -41,6 +45,14 @@ class PlaybackProfileDiagnostics {
     );
     final transcodingMaxAudioChannels = _extractTranscodingMaxAudioChannels(
       context.deviceProfile,
+    );
+
+    final videoRange = _streamVideoRange(videoStream, resolution);
+    final qualityAssessment = PlaybackQualityDiagnostics.analyze(
+      playMethod: resolution.playMethod.name,
+      serverReasons: resolution.transcodingReasons,
+      videoRange: videoRange,
+      clientReason: context.clientTranscodeReason,
     );
 
     final entry = <String, dynamic>{
@@ -67,7 +79,8 @@ class PlaybackProfileDiagnostics {
       'videoCodec': _streamCodec(videoStream),
       'videoProfile': _streamString(videoStream, 'Profile'),
       'videoLevel': _streamLevel(videoStream),
-      'videoRange': _streamVideoRange(videoStream, resolution),
+      'videoRange': videoRange,
+      'qualityAssessment': qualityAssessment,
       // What the decoder can handle, and what a "VideoRangeTypeNotSupported"
       // transcode reason must trace back to. Not what the TV can display,
       // which is the block below.
@@ -111,6 +124,7 @@ class PlaybackProfileDiagnostics {
       // which is otherwise invisible once a device is held back.
       'deviceMemory': PlatformDetection.deviceMemory,
       'audioCodec': _streamCodec(audioStream),
+      'audioStreamIndexReported': audioStream?['Index'],
       'audioProfile': _streamString(audioStream, 'Profile'),
       'audioChannels': _streamChannels(audioStream),
       'subtitleCodec': _streamCodec(subtitleStream),
