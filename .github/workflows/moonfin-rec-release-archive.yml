@@ -1,0 +1,177 @@
+name: Moonfin REC - Archive verified builds to Releases
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag: moonfin-rec-v3.2.0-build2000037'
+        type: string
+        required: true
+      title:
+        description: 'Release title'
+        type: string
+        required: true
+      android_run:
+        description: 'Successful Android run ID (optional)'
+        type: string
+        required: false
+      android_artifact:
+        description: 'Exact Android artifact name (optional)'
+        type: string
+        required: false
+      windows_run:
+        description: 'Successful Windows run ID (optional)'
+        type: string
+        required: false
+      windows_artifact:
+        description: 'Exact Windows artifact name (optional)'
+        type: string
+        required: false
+      expected_package:
+        description: 'Expected Android package, or blank'
+        type: string
+        required: false
+      expected_build:
+        description: 'Expected Android versionCode, or blank'
+        type: string
+        required: false
+      prerelease:
+        description: 'Archive as prerelease rather than stable'
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: moonfin-rec-release-archive
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Verify source runs completed successfully
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          ANDROID_RUN: ${{ inputs.android_run }}
+          ANDROID_ARTIFACT: ${{ inputs.android_artifact }}
+          WINDOWS_RUN: ${{ inputs.windows_run }}
+          WINDOWS_ARTIFACT: ${{ inputs.windows_artifact }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^moonfin-rec-v[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9-]+)?$ ]] || { echo "::error::Invalid version tag"; exit 1; }
+          [[ -n "$ANDROID_RUN" || -n "$WINDOWS_RUN" ]] || { echo "::error::Select at least one run"; exit 1; }
+          [[ -z "$ANDROID_RUN" || -n "$ANDROID_ARTIFACT" ]] || exit 1
+          [[ -z "$WINDOWS_RUN" || -n "$WINDOWS_ARTIFACT" ]] || exit 1
+          for id in "$ANDROID_RUN" "$WINDOWS_RUN"; do
+            [[ -n "$id" ]] || continue
+            [[ "$id" =~ ^[0-9]+$ ]] || { echo "::error::Invalid run ID"; exit 1; }
+            result="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id" --jq '.conclusion')"
+            source_repo="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id" --jq '.head_repository.full_name')"
+            [[ "$result" == success && "$source_repo" == "$GITHUB_REPOSITORY" ]] || { echo "::error::Run $id is not a successful run in this repository"; exit 1; }
+          done
+
+      - name: Download signed Android artifact
+        if: ${{ inputs.android_run != '' && inputs.android_artifact != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.android_run }}
+          github-token: ${{ github.token }}
+          repository: GiancarloTecnopk/Moonfin-Core
+          name: ${{ inputs.android_artifact }}
+          path: input/android
+
+      - name: Download Windows artifact
+        if: ${{ inputs.windows_run != '' && inputs.windows_artifact != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.windows_run }}
+          github-token: ${{ github.token }}
+          repository: GiancarloTecnopk/Moonfin-Core
+          name: ${{ inputs.windows_artifact }}
+          path: input/windows
+
+      - name: Verify binary formats, Android signature and optional identity
+        shell: bash
+        env:
+          EXPECTED_PACKAGE: ${{ inputs.expected_package }}
+          EXPECTED_BUILD: ${{ inputs.expected_build }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          bt="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          cert=DA87543C1F1DD8CA6CBC13890A5D54A2E0995D78A8AD282808D4E4D94AC9B099
+          find input -type f \( -iname '*.apk' -o -iname '*.exe' \) -print0 |
+          while IFS= read -r -d '' file; do
+            target="release-assets/$(basename "$file")"
+            [[ ! -e "$target" ]] || { echo "::error::Duplicate filename: $target"; exit 1; }
+            cp "$file" "$target"
+            test -s "$target"
+            case "$target" in
+              *.apk)
+                details="$("$bt/aapt" dump badging "$target")"
+                if [[ -n "$EXPECTED_PACKAGE" ]]; then
+                  echo "$details" | grep -F "package: name='$EXPECTED_PACKAGE'"
+                fi
+                if [[ -n "$EXPECTED_BUILD" ]]; then
+                  echo "$details" | grep -F "versionCode='$EXPECTED_BUILD'"
+                fi
+                "$bt/apksigner" verify --verbose --print-certs "$target" | grep -Fi "$cert"
+                ;;
+              *.exe)
+                python3 -c 'import sys; assert open(sys.argv[1],"rb").read(2)==b"MZ"' "$target"
+                ;;
+            esac
+          done
+          count="$(find release-assets -maxdepth 1 -type f | wc -l)"
+          [[ "$count" -gt 0 ]] || { echo "::error::No APK or Windows installer found"; exit 1; }
+          (cd release-assets && find . -maxdepth 1 -type f -exec sha256sum {} + > SHA256SUMS.txt)
+          cat release-assets/SHA256SUMS.txt
+
+      - name: Publish immutable files to GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          TITLE: ${{ inputs.title }}
+          ANDROID_RUN: ${{ inputs.android_run }}
+          WINDOWS_RUN: ${{ inputs.windows_run }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+          id="$ANDROID_RUN"
+          [[ -n "$id" ]] || id="$WINDOWS_RUN"
+          source_sha="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id" --jq '.head_sha')"
+          cat > notes.md <<EOF
+          Moonfin REC versioned binary archive.
+          Android source workflow run: $ANDROID_RUN
+          Windows source workflow run: $WINDOWS_RUN
+          APK certificates verified against the original Moonfin REC certificate.
+          Android app data is preserved on upgrade only when package, signature and versionCode are compatible.
+          Windows installers are unsigned unless specified otherwise.
+          SHA256SUMS.txt contains the checksums of the downloaded files.
+          EOF
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            existing="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+            for asset in release-assets/*; do
+              name="$(basename "$asset")"
+              if printf '%s\n' "$existing" | grep -Fxq "$name"; then
+                echo "Preserving existing release asset: $name"
+              else
+                gh release upload "$TAG" "$asset" --repo "$GITHUB_REPOSITORY"
+              fi
+            done
+          elif [[ "$PRERELEASE" == true ]]; then
+            gh release create "$TAG" release-assets/* --repo "$GITHUB_REPOSITORY" \
+              --target "$source_sha" --title "$TITLE" --notes-file notes.md --prerelease
+          else
+            gh release create "$TAG" release-assets/* --repo "$GITHUB_REPOSITORY" \
+              --target "$source_sha" --title "$TITLE" --notes-file notes.md
+          fi
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets \
+            --jq '{url:.url,assets:[.assets[].name]}' | tee -a "$GITHUB_STEP_SUMMARY"
