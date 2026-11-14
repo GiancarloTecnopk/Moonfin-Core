@@ -1,0 +1,217 @@
+name: Moonfin REC 3.1 RC2 - TV launcher fix Android and Windows archive
+on:
+  push:
+    branches:
+      - moonfin-rec-3.1-integration-20261114
+    paths:
+      - .github/workflows/moonfin-rec-3.1-launcher-rc2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  android:
+    name: Signed Android TV 3.1.0 RC2 - ${{ matrix.variant }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: UPDATE
+            suffix: .rec
+            package: org.moonfin.androidtv.rec
+            label: Moonfin REC
+            apk: MoonfinREC_3.1.0_RC2_AndroidTV_update_signed.apk
+          - variant: TEST
+            suffix: .rec31test
+            package: org.moonfin.androidtv.rec31test
+            label: Moonfin REC 3.1 Test
+            apk: MoonfinREC_3.1.0_RC2_AndroidTV_test_signed.apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free space for Flutter Android AOT
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/powershell \
+            /usr/local/lib/android/sdk/system-images
+          docker system prune --all --force || true
+          df -h .
+          available_kb=$(df -Pk . | awk 'NR==2 {print $4}')
+          if (( available_kb < 8 * 1024 * 1024 )); then
+            echo "::error::Insufficient runner disk space before compilation"
+            exit 1
+          fi
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Resolve dependencies and apply original REC launcher identity
+        run: |
+          flutter pub get
+          python -m pip install --disable-pip-version-check Pillow
+          python scripts/apply_rec_branding.py --android
+      - name: Use persistent Moonfin REC signing credentials
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_TYPE: ${{ secrets.ANDROID_KEYSTORE_TYPE }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          test -n "$STORE_PASSWORD"
+          test -n "$KEY_ALIAS"
+          test -n "$KEY_PASSWORD"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
+          chmod 600 android/app/release.keystore
+          cat > android/keystore.properties <<EOF
+          storeFile=../release.keystore
+          storeType=$STORE_TYPE
+          storePassword=$STORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+          chmod 600 android/keystore.properties
+      - name: Verify Android TV manifest and REC launcher configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check_rec_tv_launcher.py
+          python3 - <<'PY'
+          from PIL import Image
+          from pathlib import Path
+          banner = Path('android/app/src/main/res/drawable-nodpi/moonfin_tv_banner.png')
+          icon = Path('android/app/src/androidTv/res/drawable-nodpi/moonfin_rec_launcher.png')
+          assert banner.is_file() and Image.open(banner).size == (320, 180), 'TV banner absent or wrong size'
+          assert icon.is_file() and Image.open(icon).size == (256, 256), 'REC launcher icon absent or wrong size'
+          print('PASS: generated REC TV banner 320x180 and launcher icon 256x256')
+          PY
+      - name: Check all REC Live TV API implementations before Android AOT
+        shell: bash
+        run: |
+          flutter analyze --no-fatal-infos --no-fatal-warnings \
+            packages/server_core/lib/src/api/live_tv_api.dart \
+            packages/server_jellyfin/lib/src/api/jellyfin_live_tv_api.dart \
+            packages/server_emby/lib/src/api/emby_live_tv_api.dart \
+            packages/server_plex/lib/src/api/plex_live_tv_api.dart \
+            packages/server_silo/lib/src/api/silo_live_tv_api.dart
+      - name: Build signed 3.1 RC2 APK with explicit TV launcher
+        env:
+          MOONFIN_TEST_ID_SUFFIX: ${{ matrix.suffix }}
+          OUTPUT_APK: ${{ matrix.apk }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'android_tv_version: 3.1.0' pubspec.yaml
+          grep -Fq 'android_tv_build_number: 2000037' pubspec.yaml
+          flutter gen-l10n
+          flutter build apk --release --flavor androidTv \
+            --build-name 3.1.0 --build-number 2000037 \
+            --dart-define=MOONFIN_FORCE_TV=true \
+            --dart-define=DISTRIBUTION_CHANNEL=android_tv_apk
+          cp build/app/outputs/flutter-apk/app-androidtv-release.apk "$OUTPUT_APK"
+      - name: Verify Android TV launch declaration, app identity, and original signature
+        shell: bash
+        env:
+          EXPECTED_CERT_SHA256: DA87543C1F1DD8CA6CBC13890A5D54A2E0995D78A8AD282808D4E4D94AC9B099
+          EXPECTED_PACKAGE: ${{ matrix.package }}
+          EXPECTED_LABEL: ${{ matrix.label }}
+          APK: ${{ matrix.apk }}
+        run: |
+          set -euo pipefail
+          test -s "$APK"
+          BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | tee rec31-identity.txt
+          grep -F "package: name='$EXPECTED_PACKAGE'" rec31-identity.txt
+          grep -F "versionCode='2000037'" rec31-identity.txt
+          grep -F "application-label:'$EXPECTED_LABEL'" rec31-identity.txt
+          "$BUILD_TOOLS/aapt" dump xmltree "$APK" AndroidManifest.xml > rec31-manifest.txt
+          tv_count=$(grep -Fc 'android.intent.category.LEANBACK_LAUNCHER' rec31-manifest.txt)
+          test "$tv_count" -eq 1 || { echo "::error::Expected exactly one TV launcher entry, found $tv_count"; exit 1; }
+          grep -Fq 'android:icon' rec31-manifest.txt
+          grep -Fq 'android:banner' rec31-manifest.txt
+          echo "PASS: single Leanback launcher and explicit TV icon/banner in signed APK"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee rec31-signature.txt
+          grep -Fi "$EXPECTED_CERT_SHA256" rec31-signature.txt
+          echo "Signed REC 3.1.0 RC2 verified ($EXPECTED_PACKAGE), build 2000037, original signature and single Leanback launcher." >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish signed Android TV RC2 candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoonfinREC-3.1.0-RC2-${{ matrix.variant }}-AndroidTV-signed
+          path: ${{ matrix.apk }}
+          if-no-files-found: error
+          retention-days: 14
+
+
+  release:
+    name: Publish permanent Moonfin REC 3.1 RC2 Android TV and Windows downloads
+    needs: android
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Download both verified signed Android TV builds
+        uses: actions/download-artifact@v4
+        with:
+          pattern: MoonfinREC-3.1.0-RC2-*-AndroidTV-signed
+          merge-multiple: true
+          path: release-assets
+
+      - name: Reuse successful Windows 3.1 RC installer (unchanged Windows code)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release download moonfin-rec-v3.1.0-rc1-build2000036 \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern 'MoonfinREC_Windows_v3.1.0.exe' \
+            --dir release-assets
+          test -s release-assets/MoonfinREC_Windows_v3.1.0.exe
+          test -s release-assets/MoonfinREC_3.1.0_RC2_AndroidTV_update_signed.apk
+          test -s release-assets/MoonfinREC_3.1.0_RC2_AndroidTV_test_signed.apk
+
+      - name: Publish new immutable GitHub prerelease with checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd release-assets && sha256sum *.apk *.exe > SHA256SUMS.txt)
+          cat > notes.md <<'EOF'
+          ## Moonfin REC 3.1 RC2 — TV launcher compatibility correction
+
+          **Fix:** explicit, single LEANBACK_LAUNCHER entry for Android TV / Fire TV, with Moonfin REC icon and TV banner on the launch activity. Based on official Moonfin 3.1 UI and original REC functions.
+
+          - **MoonfinREC_3.1.0_RC2_AndroidTV_update_signed.apk** — normal Moonfin REC update (org.moonfin.androidtv.rec, versionCode 2000037). Preserves the existing REC configuration when installed over the same package with original signature. Do not uninstall before updating.
+          - **MoonfinREC_3.1.0_RC2_AndroidTV_test_signed.apk** — update for the separate 3.1 Test app (org.moonfin.androidtv.rec31test), versionCode 2000037. Preserves the separately configured Test app's data.
+          - **MoonfinREC_Windows_v3.1.0.exe** — Windows x64 executable from successfully built 3.1 RC1; Windows source unchanged by this Android-only launcher fix.
+
+          Android builds were verified for package, version, the original REC signing certificate, a single explicit TV launcher entry, icon and banner. Whether the launcher automatically adds a *Home favorite* depends on the TV launcher; if necessary, open the complete apps list and pin Moonfin REC to Home manually.
+
+          This is still a test version; validate HEVC playback on the device. Moonfin REC 3.0 stable remains untouched.
+          EOF
+          tag=moonfin-rec-v3.1.0-rc2-build2000037
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release $tag already exists; refusing to overwrite archived assets"
+            exit 1
+          fi
+          gh release create "$tag" release-assets/*.apk release-assets/*.exe release-assets/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Moonfin REC 3.1 RC2 - Android TV launcher fix / Windows x64 (2000037)" \
+            --notes-file notes.md --prerelease
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url,assets \
+            --jq '{url:.url,assets:[.assets[].name]}' | tee -a "$GITHUB_STEP_SUMMARY"
