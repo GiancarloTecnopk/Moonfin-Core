@@ -1,0 +1,98 @@
+name: Moonfin REC 3.1 archive - Android and Windows
+on:
+  push:
+    branches: [moonfin-rec-3.1-integration-20261114]
+    paths: [.github/workflows/moonfin-rec-3.1-archive.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 43592237689
+          github-token: ${{ github.token }}
+          repository: GiancarloTecnopk/Moonfin-Core
+          name: MoonfinREC-3.1.0-AndroidTV-signed-update-REC-3.0
+          path: release-assets
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 43585101378
+          github-token: ${{ github.token }}
+          repository: GiancarloTecnopk/Moonfin-Core
+          name: MoonfinREC-3.1.0-RC1-AndroidTV-signed-separate
+          path: release-assets
+      - name: Retrieve Windows installer from verified existing Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release download moonfin-rec-v3.1.0-rc1-windows --repo "$GITHUB_REPOSITORY" \
+            -p MoonfinREC_Windows_v3.1.0.exe -p SHA256SUMS.txt \
+            -D release-assets --clobber
+          sha256sum -c release-assets/SHA256SUMS.txt
+      - name: Check both Android packages and original signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          bt="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          cert=DA87543C1F1DD8CA6CBC13890A5D54A2E0995D78A8AD282808D4E4D94AC9B099
+          for kind in update_signed RC1_signed; do
+            if [[ "$kind" == update_signed ]]; then
+              apk=release-assets/MoonfinREC_3.1.0_AndroidTV_update_signed.apk
+              pkg=org.moonfin.androidtv.rec
+            else
+              apk=release-assets/MoonfinREC_3.1.0_RC1_AndroidTV_signed.apk
+              pkg=org.moonfin.androidtv.rec31test
+            fi
+            test -s "$apk"
+            "$bt/aapt" dump badging "$apk" | grep -F "package: name='$pkg'" | grep -F "versionCode='2000036'"
+            "$bt/apksigner" verify --verbose --print-certs "$apk" | grep -Fi "$cert"
+          done
+          test -s release-assets/MoonfinREC_Windows_v3.1.0.exe
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('release-assets/MoonfinREC_Windows_v3.1.0.exe')
+          assert p.open('rb').read(2) == b'MZ'
+          PY
+      - name: Release all three verified binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm release-assets/SHA256SUMS.txt
+          (cd release-assets && sha256sum *.apk *.exe > SHA256SUMS.txt)
+          cat > release-notes.md <<'EOF'
+          ## Moonfin REC 3.1.0 RC1 — Android TV and Windows x64
+
+          Prerelease for testing: upstream Moonfin 3.1 graphics and My Media, with custom REC functions.
+
+          - **MoonfinREC_3.1.0_AndroidTV_update_signed.apk**: UPDATE to REC 3.0 (same package org.moonfin.androidtv.rec, versionCode 2000036, original signing certificate). Preserves the app configuration if REC 3.0 is still installed.
+          - **MoonfinREC_3.1.0_RC1_AndroidTV_signed.apk**: SEPARATE TEST INSTALLATION (org.moonfin.androidtv.rec31test). Does not update REC 3.0 and has separate settings.
+          - **MoonfinREC_Windows_v3.1.0.exe**: Windows x64 installer (unsigned).
+
+          SHA256SUMS.txt contains checksums for every download.
+
+          REC features: Live TV REC/STOP, recording without EPG, blinking recording indicator, FIT/CROP/STRETCH, Jellyfin library/EPG refresh, playback diagnostics and candidate HEVC pacing adjustments. HEVC fluidity still requires real-device confirmation.
+
+          Moonfin REC 3.0 stable remains available in a separate Release.
+          EOF
+          tag=moonfin-rec-v3.1.0-rc1-build2000036
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" release-assets/*.apk release-assets/*.exe release-assets/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$tag" release-assets/*.apk release-assets/*.exe release-assets/SHA256SUMS.txt \
+              --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --title "Moonfin REC 3.1.0 RC1 - Android TV and Windows x64 (build 2000036)" \
+              --notes-file release-notes.md --prerelease
+          fi
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url,isPrerelease,assets \
+            --jq '{url:.url,prerelease:.isPrerelease,assets:[.assets[].name]}' | tee -a "$GITHUB_STEP_SUMMARY"
