@@ -1,0 +1,79 @@
+name: Archive Moonfin REC 3.0 HEVC diagnostic recovery build
+on:
+  push:
+    branches: [moonfin-rec-3.1-integration-20261114]
+    paths: [.github/workflows/moonfin-rec-3.0-diag-archive.yml]
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Retrieve signed Android diagnostic 2000033
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 41825017596
+          github-token: ${{ github.token }}
+          repository: GiancarloTecnopk/Moonfin-Core
+          name: MoonfinREC-3.0.0-HEVC-DIAG-Android-signed
+          path: assets
+      - name: Retrieve Windows 3.0 diagnostic installer
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 41825017596
+          github-token: ${{ github.token }}
+          repository: GiancarloTecnopk/Moonfin-Core
+          name: MoonfinREC-3.0.0-HEVC-DIAG-Windows-x64-installer-unsigned
+          path: assets
+      - name: Check original diagnostic app and installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=assets/MoonfinREC_3.0.0_MIGRATION_TEST_signed.apk
+          exe=assets/MoonfinREC_Windows_v3.0.0.exe
+          test -s "$apk"
+          test -s "$exe"
+          bt="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$bt/aapt" dump badging "$apk" | grep -F "package: name='org.moonfin.androidtv.rec3test'" | grep -F "versionCode='2000033'"
+          "$bt/apksigner" verify --verbose --print-certs "$apk" | grep -Fi 'DA87543C1F1DD8CA6CBC13890A5D54A2E0995D78A8AD282808D4E4D94AC9B099'
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('assets/MoonfinREC_Windows_v3.0.0.exe')
+          assert p.open('rb').read(2) == b'MZ'
+          PY
+      - name: Create archived diagnostic prerelease and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd assets && sha256sum *.apk *.exe > SHA256SUMS.txt)
+          cat > diag-notes.md <<'EOF'
+          ## Moonfin REC 3.0 HEVC diagnostic build 2000033
+
+          **Historical diagnostic recovery build, not the stable 3.0 release.**
+          - Android TV signed APK: MoonfinREC_3.0.0_MIGRATION_TEST_signed.apk, separate package org.moonfin.androidtv.rec3test, versionCode 2000033. Does NOT update org.moonfin.androidtv.rec.
+          - Windows x64 installer: MoonfinREC_Windows_v3.0.0.exe (unsigned).
+          - SHA256SUMS.txt: checksums for both files.
+
+          Source build: GitHub Actions run #41825017596, commit 72455c4ba4fd4cad063d3f1b38d247c792b2f57c.
+          This build was used for HEVC playback diagnostics; no guarantee that it fixes HEVC stutter.
+
+          For regular use, obtain Moonfin REC 3.0 stable (build 2000035) from the separate stable release.
+          EOF
+          tag=moonfin-rec-v3.0.0-hevc-diagnostics-build2000033
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" assets/*.apk assets/*.exe assets/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$tag" assets/*.apk assets/*.exe assets/SHA256SUMS.txt \
+              --repo "$GITHUB_REPOSITORY" --target 72455c4ba4fd4cad063d3f1b38d247c792b2f57c \
+              --title "Moonfin REC 3.0.0 HEVC Diagnostics - 2000033" \
+              --notes-file diag-notes.md --prerelease
+          fi
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url,assets \
+            --jq '{url:.url,assets:[.assets[].name]}' | tee -a "$GITHUB_STEP_SUMMARY"
