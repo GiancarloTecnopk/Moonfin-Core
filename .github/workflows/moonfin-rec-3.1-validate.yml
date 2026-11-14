@@ -1,0 +1,68 @@
+name: Moonfin REC 3.1 - Functional validation
+on:
+  push:
+    branches:
+      - moonfin-rec-3.1-integration-20261114
+    paths:
+      - .github/workflows/moonfin-rec-3.1-validate.yml
+      - lib/**
+      - packages/**
+      - test/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+      - name: Resolve Flutter packages and generate translations
+        run: |
+          flutter pub get
+          flutter gen-l10n
+      - name: Guard official 3.1 UI and REC features
+        run: |
+          set -euo pipefail
+          grep -Fq 'SettingsPreviewController' lib/ui/screens/settings/settings_side_panel.dart
+          grep -Fq '_tvFavoriteFocus' lib/ui/screens/livetv/live_tv_player_screen.dart
+          grep -Fq 'shouldInstantRecordCurrentProgram(' lib/ui/screens/livetv/live_tv_player_screen.dart
+          grep -Fq 'createChannelTimer(' lib/ui/screens/livetv/live_tv_player_screen.dart
+          grep -Fq 'Registrazione interrotta' lib/ui/screens/livetv/live_tv_player_screen.dart
+          grep -Fq '_cycleLiveTvZoom' lib/ui/screens/livetv/live_tv_player_screen.dart
+          grep -Fq '_recordingBlinkOn' lib/ui/screens/livetv/live_tv_player_screen.dart
+          grep -Fq '_refreshJellyfinLibraries' lib/ui/screens/settings/settings_side_panel.dart
+          grep -Fq '_refreshEpg' lib/ui/screens/settings/settings_side_panel.dart
+          grep -Fq 'technicalDiagnosticRows' lib/playback/media3_player_backend.dart
+          grep -Fq 'HevcPacingPolicy.useCustomVsyncPacing' packages/moonfin_native_video/android/src/main/kotlin/org/moonfin/nativevideo/Media3VideoView.kt
+          if grep -n -E '^(<<<<<<<|>>>>>>>|=======)$' lib/playback/media3_player_backend.dart lib/playback/playback_info_sections.dart lib/ui/screens/livetv/live_tv_player_screen.dart lib/ui/screens/playback/video_player_screen.dart lib/ui/screens/settings/settings_side_panel.dart; then
+            echo "::error::Unresolved merge markers"
+            exit 1
+          fi
+      - name: Flutter analyze REC integration
+        run: |
+          flutter analyze --no-fatal-infos --no-fatal-warnings \
+            lib/playback/media3_player_backend.dart \
+            lib/playback/media3_playback_health.dart \
+            lib/playback/playback_info_sections.dart \
+            lib/ui/screens/playback/video_player_screen.dart \
+            lib/ui/screens/livetv/live_tv_player_screen.dart \
+            lib/ui/screens/livetv/live_tv_recordings_screen.dart \
+            lib/ui/screens/settings/settings_side_panel.dart \
+            lib/data/viewmodels/recordings_view_model.dart \
+            lib/util/live_tv_recording.dart \
+            packages/server_core/lib/src/api/live_tv_api.dart \
+            packages/server_jellyfin/lib/src/api/jellyfin_live_tv_api.dart \
+            packages/server_emby/lib/src/api/emby_live_tv_api.dart \
+            packages/server_plex/lib/src/api/plex_live_tv_api.dart
+      - name: Flutter REC regression tests
+        run: |
+          flutter test test/util/live_tv_recording_test.dart
+          flutter test test/data/viewmodels/recording_delete_test.dart
+          flutter test test/playback/media3_playback_health_test.dart
+          flutter test test/playback/playback_quality_diagnostics_test.dart
