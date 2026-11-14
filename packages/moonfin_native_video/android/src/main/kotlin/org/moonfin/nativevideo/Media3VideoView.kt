@@ -354,8 +354,24 @@ private class VsyncPacingAdapterFactory(
     private val display: Display?,
     private val onPacedReleaseForAdapter: (() -> ((Long, Long) -> Unit))?,
 ) : MediaCodecAdapter.Factory {
-    override fun createAdapter(configuration: MediaCodecAdapter.Configuration): MediaCodecAdapter =
-        VsyncPacingAdapter(delegate.createAdapter(configuration), display, onPacedReleaseForAdapter?.invoke())
+    override fun createAdapter(configuration: MediaCodecAdapter.Configuration): MediaCodecAdapter {
+        val codec = configuration.format.sampleMimeType
+        val adapter = delegate.createAdapter(configuration)
+        if (!HevcPacingPolicy.useCustomVsyncPacing(codec)) {
+            // Preserve the 3.1 renderer and native Media3 frame scheduling
+            // for HEVC, avoiding the one-vsync custom pacing in the REC experiment.
+            // This does not change the decoder, direct play or buffering decisions.
+            Media3Bridge.emitEvent(
+                mapOf(
+                    "event" to "framePacing",
+                    "mode" to "media3Native",
+                    "codec" to (codec ?: "unknown"),
+                ),
+            )
+            return adapter
+        }
+        return VsyncPacingAdapter(adapter, display, onPacedReleaseForAdapter?.invoke())
+    }
 }
 
 /**
