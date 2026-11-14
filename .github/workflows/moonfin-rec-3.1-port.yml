@@ -1,13 +1,8 @@
 name: Moonfin REC 3.1 - Port functions with official 3.1 interface
 
+# Initial integration was performed; run this port utility manually only
+# when intentionally preparing a fresh upstream base, never on future version bumps.
 on:
-  push:
-    branches:
-      - moonfin-rec-3.1-integration-20261114
-    paths:
-      - .github/workflows/moonfin-rec-3.1-port.yml
-      - scripts/port_rec31_functions.py
-      - pubspec.yaml
   workflow_dispatch:
 
 concurrency:
