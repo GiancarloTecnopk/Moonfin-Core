@@ -43,7 +43,9 @@
               />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
-                <!-- Mobile/desktop launch intent. Android TV defines a separate\n                     LEANBACK_LAUNCHER intent in its flavor manifest to avoid\n                     registering two TV launch entries for MainActivity. -->
+                <!-- Mobile launcher intent. The Android TV flavor adds its own
+                     single LEANBACK_LAUNCHER intent to avoid duplicate TV
+                     launcher registrations for the same MainActivity. -->
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
             <!-- moonfin://item?id=... / moonfin://play?id=... / moonfin://search?query=... /
