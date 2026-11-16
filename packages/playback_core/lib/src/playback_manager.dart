@@ -75,6 +75,17 @@ Future<bool> confirmSeekHeld(
   return false;
 }
 
+/// A manual quality ceiling does not imply a video re-encode when the source
+/// already fits. An unknown source bitrate stays conservative, since the
+/// user explicitly requested a cap and the server might otherwise exceed it.
+/// Bitrates from Jellyfin/Emby are in bits/s; selection is in Mbps.
+bool bitrateChangeRequiresTranscode(int? selectedMbps, int? sourceBitrate) {
+  if (selectedMbps == null) return false;
+  if (selectedMbps <= 0) return true;
+  if (sourceBitrate == null || sourceBitrate <= 0) return true;
+  return sourceBitrate > selectedMbps * 1000000;
+}
+
 /// Removes [vetoedCodecs] from every audio codec list in [profile], so the
 /// server neither direct plays nor copies a codec this device has proven it
 /// can't decode. An entry whose audio codec list empties is dropped outright,
@@ -5063,8 +5074,15 @@ class PlaybackManager implements AudioOwnable {
 
   Future<void> changeBitrate(int? mbps) async {
     _maxBitrateOverrideMbps = mbps;
+    final sourceBitrate = _currentResolution?.sourceBitrate;
+    final force = bitrateChangeRequiresTranscode(mbps, sourceBitrate);
+    _diagnosticLogger?.call(
+      'Quality change: selected ${mbps == null ? "Auto" : "${mbps} Mbps"}, '
+      'source bitrate ${sourceBitrate ?? "unknown"} bps; '
+      'force transcode: $force',
+    );
     await _reResolveAtCurrentPosition(
-      forceTranscode: mbps != null,
+      forceTranscode: force,
       replanReason: ReplanReason.qualityChange,
     );
   }

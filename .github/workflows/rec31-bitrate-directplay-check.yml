@@ -1,0 +1,22 @@
+name: Moonfin REC 3.1 bitrate direct-play regression tests
+on:
+  push:
+    branches:
+      - moonfin-rec-3.1-bitrate-directplay-fix-20261116
+  workflow_dispatch:
+
+jobs:
+  bitrate-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+      - name: Resolve Flutter packages
+        run: flutter pub get
+      - name: Analyze changed bitrate policy
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings packages/playback_core/lib/src/playback_manager.dart test/playback/rec31_manual_bitrate_directplay_test.dart
+      - name: Test bitrate policy and existing Auto behavior
+        run: flutter test test/playback/rec31_manual_bitrate_directplay_test.dart test/playback/auto_bitrate_cap_test.dart
