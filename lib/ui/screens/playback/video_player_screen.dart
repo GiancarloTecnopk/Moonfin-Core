@@ -1996,6 +1996,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       castPositionMs: _remotePositionTicks ~/ 10000,
       castVolume: _remoteVolume,
       selectedBitrateMbps: _manager.maxBitrateOverrideMbps,
+      globalBitrateLimitMbps: int.tryParse(_prefs.get(UserPreferences.maxBitrate)),
     );
   }
 
