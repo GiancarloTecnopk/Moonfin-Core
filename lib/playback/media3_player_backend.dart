@@ -1701,11 +1701,13 @@ class Media3PlayerBackend extends PlayerBackend
     int castPositionMs = 0,
     double? castVolume,
     int? selectedBitrateMbps,
+    int? globalBitrateLimitMbps,
   }) async {
     await _invoke<void>('setUiMetadata', {
       'hasPrevious': hasPrevious,
       'hasNext': hasNext,
       'selectedBitrateMbps': selectedBitrateMbps,
+      'globalBitrateLimitMbps': globalBitrateLimitMbps,
       'skipBackMs': skipBackMs,
       'skipForwardMs': skipForwardMs,
       'topTitle': topTitle,
