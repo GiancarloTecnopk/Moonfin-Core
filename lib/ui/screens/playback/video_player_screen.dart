@@ -7512,11 +7512,19 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
 
   void _showBitrateSelector() {
     final l10n = AppLocalizations.of(context);
-    final options = <int?>[null, 40, 20, 12, 8, 4, 2];
+    // Keep the in-player choices aligned with the global streaming limits.
+    // A null per-session override means "use the global preference", NOT
+    // unlimited bandwidth. Show that effective default in the Auto label.
+    final options = <int?>[null, 200, 120, 80, 40, 20, 12, 10, 8, 5, 4, 2, 1];
     final current = _manager.maxBitrateOverrideMbps;
+    final globalLimit = int.tryParse(_prefs.get(UserPreferences.maxBitrate));
 
-    String label(int? mbps) =>
-        mbps == null ? l10n.auto : l10n.bitrateValueMbps(mbps);
+    String label(int? mbps) {
+      if (mbps != null) return l10n.bitrateValueMbps(mbps);
+      return globalLimit == null
+          ? l10n.auto
+          : '${l10n.auto} (≤ ${l10n.bitrateValueMbps(globalLimit)})';
+    }
 
     final trackOptions = options
         .map((mbps) => TrackOption(label: label(mbps)))
