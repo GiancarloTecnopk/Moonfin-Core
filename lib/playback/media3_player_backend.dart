@@ -88,6 +88,7 @@ class Media3PlayerBackend extends PlayerBackend
     bool? supportsP7,
     bool? supportsP8,
     bool? displaySupportsDolbyVision,
+    String? deviceModel,
   }) {
     final behavior = prefs.get(
       UserPreferences.dolbyVisionProfile7DirectPlayBehavior,
@@ -101,9 +102,20 @@ class Media3PlayerBackend extends PlayerBackend
     if (prefs.get(UserPreferences.media3MapDolbyVisionProfile7ToHevc)) {
       return Media3DoviCompatMode.strip;
     }
+    // Fire TV Cube 3 (AFTGAZL) officially decodes Dolby Vision Profile 8.
+    // Some Fire OS 7 MediaCodec probes do not report the P8 profile, causing
+    // the P7 compatibility path to strip Dolby Vision even on a DV television.
+    // Trust the known device capability, but NEVER bypass the attached display
+    // check or the user's explicit "play P7 as HDR10" preference above.
+    final isFireCube3 =
+        (deviceModel ?? PlatformDetection.deviceModel)
+            ?.trim()
+            .toUpperCase() ==
+        'AFTGAZL';
     final canShowDolbyVision =
-        (supportsP8 ?? PlatformDetection.supportsDoViProfile8) &&
-        (displaySupportsDolbyVision ?? PlatformDetection.supportsDolbyVision);
+        (displaySupportsDolbyVision ?? PlatformDetection.supportsDolbyVision) &&
+        ((supportsP8 ?? PlatformDetection.supportsDoViProfile8) ||
+            isFireCube3);
     return canShowDolbyVision
         ? Media3DoviCompatMode.convert
         : Media3DoviCompatMode.strip;
@@ -1373,9 +1385,11 @@ class Media3PlayerBackend extends PlayerBackend
     final doviMode = doviCompatMode(_prefs);
     _diag(
       'Media3: DoVi P7 policy ${doviMode.name} '
-      '(P7 decoder ${PlatformDetection.supportsDoViProfile7}, '
-      'P8 decoder ${PlatformDetection.supportsDoViProfile8}, '
-      'DoVi display ${PlatformDetection.supportsDolbyVision})',
+      '(model ${PlatformDetection.deviceModel}, '
+      'P7 decoder ${PlatformDetection.supportsDoViProfile7}, '
+      'P8 probe ${PlatformDetection.supportsDoViProfile8}, '
+      'DoVi display ${PlatformDetection.supportsDolbyVision}, '
+      'forced HDR10 ${_prefs.get(UserPreferences.media3MapDolbyVisionProfile7ToHevc)})',
     );
 
     // media3 opens the stream itself rather than through the Dart client, so
