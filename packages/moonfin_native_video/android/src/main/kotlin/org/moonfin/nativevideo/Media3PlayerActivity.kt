@@ -628,14 +628,16 @@ class Media3PlayerActivity : ComponentActivity() {
                 }
 
                 if (!isInPip && showBitrateDialog) {
-                    val options = listOf<Int?>(null, 40, 20, 12, 8, 4, 2)
+                    val options = listOf<Int?>(null, 200, 120, 80, 40, 20, 12, 10, 8, 5, 4, 2, 1)
                     val current = metadataState.selectedBitrateMbps
                     TrackSelectionDialog(
                         title = "Bitrate",
                         tracks = options.map { mbps ->
                             Media3TrackOption(
                                 index = mbps ?: -1,
-                                label = if (mbps == null) "Auto" else "$mbps Mbps",
+                                label = if (mbps == null) {
+                                    metadataState.globalBitrateLimitMbps?.let { "Auto (≤ $it Mbps)" } ?: "Auto"
+                                } else "$mbps Mbps",
                                 selected = mbps == current,
                             )
                         },
@@ -939,6 +941,7 @@ private data class Media3UiMetadataState(
     val hasPrevious: Boolean = false,
     val hasNext: Boolean = false,
     val selectedBitrateMbps: Int? = null,
+    val globalBitrateLimitMbps: Int? = null,
     val skipBackMs: Int = 10000,
     val skipForwardMs: Int = 10000,
     val topTitle: String = "",
@@ -960,6 +963,7 @@ private data class Media3UiMetadataState(
             val hasPrevious = map["hasPrevious"] as? Boolean ?: false
             val hasNext = map["hasNext"] as? Boolean ?: false
             val selectedBitrateMbps = (map["selectedBitrateMbps"] as? Number)?.toInt()
+            val globalBitrateLimitMbps = (map["globalBitrateLimitMbps"] as? Number)?.toInt()
             val skipBackMs = (map["skipBackMs"] as? Number)?.toInt() ?: 10000
             val skipForwardMs = (map["skipForwardMs"] as? Number)?.toInt() ?: 10000
             val topTitle = map["topTitle"]?.toString() ?: ""
@@ -1033,6 +1037,7 @@ private data class Media3UiMetadataState(
                 hasPrevious = hasPrevious,
                 hasNext = hasNext,
                 selectedBitrateMbps = selectedBitrateMbps,
+                globalBitrateLimitMbps = globalBitrateLimitMbps,
                 skipBackMs = skipBackMs,
                 skipForwardMs = skipForwardMs,
                 topTitle = topTitle,
