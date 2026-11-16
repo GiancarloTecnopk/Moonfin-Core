@@ -1385,9 +1385,11 @@ class Media3PlayerBackend extends PlayerBackend
     final doviMode = doviCompatMode(_prefs);
     _diag(
       'Media3: DoVi P7 policy ${doviMode.name} '
-      '(P7 decoder ${PlatformDetection.supportsDoViProfile7}, '
-      'P8 decoder ${PlatformDetection.supportsDoViProfile8}, '
-      'DoVi display ${PlatformDetection.supportsDolbyVision})',
+      '(model ${PlatformDetection.deviceModel}, '
+      'P7 decoder ${PlatformDetection.supportsDoViProfile7}, '
+      'P8 probe ${PlatformDetection.supportsDoViProfile8}, '
+      'DoVi display ${PlatformDetection.supportsDolbyVision}, '
+      'forced HDR10 ${_prefs.get(UserPreferences.media3MapDolbyVisionProfile7ToHevc)})',
     );
 
     // media3 opens the stream itself rather than through the Dart client, so
