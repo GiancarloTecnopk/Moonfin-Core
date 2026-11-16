@@ -4,7 +4,7 @@ on:
     branches:
       - moonfin-rec-3.1-bitrate-directplay-fix-20261116
     paths:
-      - .github/workflows/moonfin-rec-3.1-cube3-dv-test.yml
+      - .github/workflows/rec31-cube3-combined-build.yml
   workflow_dispatch:
 
 permissions:
