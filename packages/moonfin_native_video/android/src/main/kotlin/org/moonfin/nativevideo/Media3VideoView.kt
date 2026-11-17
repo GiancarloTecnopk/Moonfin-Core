@@ -1125,6 +1125,7 @@ class Media3VideoView(
     // setSource payload and kept current by onAudioInputFormatChanged so
     // mid-play track switches re-gate tunneling.
     private var currentAudioIsLossless = false
+    private var currentAudioIsDts = false
     private var tunnelingActive = false
     private var audioRekickRunnable: Runnable? = null
     private data class AudioRekickOperation(val id: Long, val sourceToken: Int, val player: ExoPlayer)
@@ -1614,6 +1615,11 @@ class Media3VideoView(
             decoderReuseEvaluation: DecoderReuseEvaluation?,
         ) {
             currentAudioIsBitstream = isBitstreamAudioMime(format.sampleMimeType)
+            val dts = DtsTunnelingPolicy.isDtsMime(format.sampleMimeType)
+            if (dts != currentAudioIsDts) {
+                currentAudioIsDts = dts
+                mainHandler.post { applyTrackSelectorForCurrentSource() }
+            }
             val lossless = isLosslessAudioMime(format.sampleMimeType)
             if (lossless != currentAudioIsLossless) {
                 // A mid-play track switch moved onto (or off) TrueHD/MLP:
@@ -3588,6 +3594,10 @@ class Media3VideoView(
         // onAudioInputFormatChanged keeps it current across track switches.
         currentAudioIsLossless =
             isLosslessAudioCodecName(args["audioCodec"]?.toString())
+        // DTS on Fire TV Cube can leave video output frozen while the audio
+        // clock advances when Media3 tunneling is selected. Exclude tunneling
+        // from the first track selection; keep audio/video direct play intact.
+        currentAudioIsDts = DtsTunnelingPolicy.isDtsCodec(args["audioCodec"]?.toString())
 
         if (SourceRebuildPolicy.shouldRebuild(
                 playerHasLoadedSource = playerHasLoadedSource,
@@ -4200,6 +4210,9 @@ class Media3VideoView(
                 // exception on some AVR chains. Tunneling is only a latency
                 // optimization, so drop it whenever a lossless track is active.
                 !currentAudioIsLossless &&
+                // DTS/HD/X may advance the audio clock without advancing the
+                // video renderer on Fire TV. Do not enable tunneled AV sync.
+                !currentAudioIsDts &&
                 // App-side IEC packing writes PCM-shaped bursts that must
                 // never get HW_AV_SYNC headers, so tunneling stays off while
                 // the IEC output mode is live (it returns after the session

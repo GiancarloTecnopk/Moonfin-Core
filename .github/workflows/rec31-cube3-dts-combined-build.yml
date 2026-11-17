@@ -1,0 +1,200 @@
+name: Moonfin REC 3.1 combined DV bitrate DTS signed test (2000040)
+on:
+  push:
+    branches:
+      - moonfin-rec-3.1-dts-video-freeze-fix-20261117
+    paths:
+      - .github/workflows/rec31-cube3-dts-combined-build.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  android:
+    name: Signed separate Android TV Cube3 Dolby Vision test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: TEST
+            suffix: .rec31test
+            package: org.moonfin.androidtv.rec31test
+            label: Moonfin REC 3.1 Test
+            apk: MoonfinREC_3.1.0_Cube3_DV_Bitrate_DTS_test_signed.apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free space for Flutter Android AOT
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/powershell \
+            /usr/local/lib/android/sdk/system-images
+          docker system prune --all --force || true
+          df -h .
+          available_kb=$(df -Pk . | awk 'NR==2 {print $4}')
+          if (( available_kb < 8 * 1024 * 1024 )); then
+            echo "::error::Insufficient runner disk space before compilation"
+            exit 1
+          fi
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Resolve dependencies and apply original REC launcher identity
+        run: |
+          flutter pub get
+          python -m pip install --disable-pip-version-check Pillow
+          python scripts/apply_rec_branding.py --android
+      - name: Use persistent Moonfin REC signing credentials
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_TYPE: ${{ secrets.ANDROID_KEYSTORE_TYPE }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          test -n "$STORE_PASSWORD"
+          test -n "$KEY_ALIAS"
+          test -n "$KEY_PASSWORD"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
+          chmod 600 android/app/release.keystore
+          cat > android/keystore.properties <<EOF
+          storeFile=../release.keystore
+          storeType=$STORE_TYPE
+          storePassword=$STORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+          chmod 600 android/keystore.properties
+      - name: Verify Android TV manifest and REC launcher configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check_rec_tv_launcher.py
+          python3 - <<'PY'
+          from PIL import Image
+          from pathlib import Path
+          banner = Path('android/app/src/main/res/drawable-nodpi/moonfin_tv_banner.png')
+          icon = Path('android/app/src/androidTv/res/drawable-nodpi/moonfin_rec_launcher.png')
+          assert banner.is_file() and Image.open(banner).size == (320, 180), 'TV banner absent or wrong size'
+          assert icon.is_file() and Image.open(icon).size == (256, 256), 'REC launcher icon absent or wrong size'
+          print('PASS: generated REC TV banner 320x180 and launcher icon 256x256')
+          PY
+      - name: Check all REC Live TV API implementations before Android AOT
+        shell: bash
+        run: |
+          flutter analyze --no-fatal-infos --no-fatal-warnings \
+            packages/server_core/lib/src/api/live_tv_api.dart \
+            packages/server_jellyfin/lib/src/api/jellyfin_live_tv_api.dart \
+            packages/server_emby/lib/src/api/emby_live_tv_api.dart \
+            packages/server_plex/lib/src/api/plex_live_tv_api.dart \
+            packages/server_silo/lib/src/api/silo_live_tv_api.dart
+      - name: Validate Fire TV Cube 3 Dolby Vision compatibility rules
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter gen-l10n
+          flutter analyze --no-fatal-infos --no-fatal-warnings lib/playback/media3_player_backend.dart packages/playback_core/lib/src/playback_manager.dart
+          flutter test test/playback/media3_cube3_dolby_vision_policy_test.dart test/playback/rec31_manual_bitrate_directplay_test.dart test/playback/auto_bitrate_cap_test.dart
+      - name: Build signed Cube3 Dolby Vision bitrate and DTS test APK
+        env:
+          MOONFIN_TEST_ID_SUFFIX: ${{ matrix.suffix }}
+          OUTPUT_APK: ${{ matrix.apk }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'android_tv_version: 3.1.0' pubspec.yaml
+          grep -Fq 'android_tv_build_number: 2000040' pubspec.yaml
+          flutter gen-l10n
+          flutter build apk --release --flavor androidTv \
+            --build-name 3.1.0 --build-number 2000040 \
+            --dart-define=MOONFIN_FORCE_TV=true \
+            --dart-define=DISTRIBUTION_CHANNEL=android_tv_apk
+          cp build/app/outputs/flutter-apk/app-androidtv-release.apk "$OUTPUT_APK"
+      - name: Verify Android TV launch declaration, app identity, and original signature
+        shell: bash
+        env:
+          EXPECTED_CERT_SHA256: DA87543C1F1DD8CA6CBC13890A5D54A2E0995D78A8AD282808D4E4D94AC9B099
+          EXPECTED_PACKAGE: ${{ matrix.package }}
+          EXPECTED_LABEL: ${{ matrix.label }}
+          APK: ${{ matrix.apk }}
+        run: |
+          set -euo pipefail
+          test -s "$APK"
+          BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | tee rec31-identity.txt
+          grep -F "package: name='$EXPECTED_PACKAGE'" rec31-identity.txt
+          grep -F "versionCode='2000040'" rec31-identity.txt
+          grep -F "application-label:'$EXPECTED_LABEL'" rec31-identity.txt
+          "$BUILD_TOOLS/aapt" dump xmltree "$APK" AndroidManifest.xml > rec31-manifest.txt
+          tv_count=$(grep -Fc 'android.intent.category.LEANBACK_LAUNCHER' rec31-manifest.txt)
+          test "$tv_count" -eq 1 || { echo "::error::Expected exactly one TV launcher entry, found $tv_count"; exit 1; }
+          grep -Fq 'android:icon' rec31-manifest.txt
+          grep -Fq 'android:banner' rec31-manifest.txt
+          echo "PASS: single Leanback launcher and explicit TV icon/banner in signed APK"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee rec31-signature.txt
+          grep -Fi "$EXPECTED_CERT_SHA256" rec31-signature.txt
+          echo "Signed REC 3.1.0 Cube3 P8 test verified ($EXPECTED_PACKAGE), build 2000037, original signature and single Leanback launcher." >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish signed Android TV RC2 candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoonfinREC-3.1.0-Cube3-DV-Bitrate-DTS-build2000040
+          path: ${{ matrix.apk }}
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish immutable signed Cube3 Dolby Vision test download
+    needs: android
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified signed test APK
+        uses: actions/download-artifact@v4
+        with:
+          name: MoonfinREC-3.1.0-Cube3-DV-Bitrate-DTS-build2000040
+          path: release-assets
+      - name: Publish test prerelease with SHA256 checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-assets
+          test -s MoonfinREC_3.1.0_Cube3_DV_Bitrate_DTS_test_signed.apk
+          sha256sum MoonfinREC_3.1.0_Cube3_DV_Bitrate_DTS_test_signed.apk > SHA256SUMS.txt
+          tag=moonfin-rec-v3.1.0-cube3-dv-bitrate-dts-test-2000040
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo '::error::Test release tag already exists; refusing to replace it'
+            exit 1
+          fi
+          cat > notes.md <<'EOF'
+          ## Moonfin REC 3.1 - Fire TV Cube 3 Dolby Vision P8 experimental test
+          - Signed test package `org.moonfin.androidtv.rec31test`, build 2000040. Installs separately from stable Moonfin REC 3.0.
+          - Fixes automatic P7 compatibility policy for Fire TV Cube 3 model AFTGAZL: the published P8 capability is used when the MediaCodec P8 probe is a false negative AND the attached display advertises Dolby Vision.
+          - Explicit P7-to-HDR10 preference still takes priority; on non-Dolby Vision TVs and other devices the previous fallback remains.
+          - P7-to-P8 conversion requires an accessible valid RPU; when no RPU is found the player can still fall back to HDR10. It does not guarantee Dolby Vision from every file.
+          - Includes bitrate policy fix: manual selection up to 200 Mbps preserves direct play when server-reported source bitrate fits the ceiling; incompatible codecs still require server decisions.
+          - Verify Hisense Dolby Vision popup on playback and inspect diagnostics `Media3: DoVi P7 policy` / `handled as convert` / RPU counts.
+          - Tests a targeted DTS tunneling exclusion intended to prevent audio-playing/video-frozen HEVC on Fire TV Cube; hardware behavior requires device validation. No source media, Jellyfin settings, or working REC 3.0 installation are modified.
+          EOF
+          gh release create "$tag" MoonfinREC_3.1.0_Cube3_DV_Bitrate_DTS_test_signed.apk SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title 'Moonfin REC 3.1 Cube3 DV BITRATE DTS TEST - build 2000040' \
+            --notes-file notes.md --prerelease
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url,assets --jq '{url:.url,assets:[.assets[].name]}' | tee -a "$GITHUB_STEP_SUMMARY"
