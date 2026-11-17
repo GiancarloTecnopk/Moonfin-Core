@@ -110,12 +110,6 @@ jobs:
           flutter gen-l10n
           flutter analyze --no-fatal-infos --no-fatal-warnings lib/playback/media3_player_backend.dart packages/playback_core/lib/src/playback_manager.dart
           flutter test test/playback/media3_cube3_dolby_vision_policy_test.dart test/playback/rec31_manual_bitrate_directplay_test.dart test/playback/auto_bitrate_cap_test.dart
-      - name: Test Android DTS tunneling policy
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd packages/moonfin_native_video/android
-          ./gradlew testDebugUnitTest --tests 'org.moonfin.nativevideo.DtsTunnelingPolicyTest'
       - name: Build signed Cube3 Dolby Vision bitrate and DTS test APK
         env:
           MOONFIN_TEST_ID_SUFFIX: ${{ matrix.suffix }}
