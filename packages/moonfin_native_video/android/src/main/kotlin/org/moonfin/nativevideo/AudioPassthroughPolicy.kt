@@ -18,9 +18,12 @@ enum class PassthroughMode { DISABLED, AUTO, MANUAL }
 data class AudioPassthroughPolicy(
     val mode: PassthroughMode,
     val allowedCodecs: Set<String>,
+    /** Per-device safety veto: Cube3 DTS passthrough can destabilize the AV clock. */
+    val forceLocalDtsDecode: Boolean = false,
 ) {
     private fun allowsBitstream(mimeType: String?): Boolean {
         val codec = codecKeyForMime(mimeType) ?: return true
+        if (forceLocalDtsDecode && codec in setOf("dts", "dtshd")) return false
         return when (mode) {
             PassthroughMode.AUTO -> true
             PassthroughMode.DISABLED -> false
