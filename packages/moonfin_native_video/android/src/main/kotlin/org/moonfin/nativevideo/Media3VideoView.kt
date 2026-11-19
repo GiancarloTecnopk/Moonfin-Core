@@ -292,7 +292,9 @@ private class MoonfinRenderersFactory(
         // Auto skips the policy veto so the platform's own format probe
         // stays authoritative. The recovery wrapper forwards every probe
         // call untouched, so it rides along in every mode.
-        if (passthroughPolicy.mode == PassthroughMode.AUTO) {
+        if (passthroughPolicy.mode == PassthroughMode.AUTO &&
+            !passthroughPolicy.forceLocalDtsDecode
+        ) {
             return recovering
         }
         return PassthroughPolicyAudioSink(recovering, passthroughPolicy)
@@ -2785,6 +2787,10 @@ class Media3VideoView(
         val passthroughPolicy = AudioPassthroughPolicy.fromWire(
             passthroughMode,
             passthroughCodecs,
+        ).copy(
+            // AFTGAZL is Fire TV Cube 3. Keep original HEVC/DV video and
+            // decode DTS locally to PCM to avoid the suspect bitstream clock.
+            forceLocalDtsDecode = Build.MODEL.equals("AFTGAZL", ignoreCase = true),
         )
         iecOutputProvider = if (passthroughOutput == "iec" && Build.VERSION.SDK_INT >= 24) {
             Iec61937AudioOutputProvider(context)
