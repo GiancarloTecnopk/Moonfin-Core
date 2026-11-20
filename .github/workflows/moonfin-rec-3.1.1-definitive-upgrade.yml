@@ -59,6 +59,10 @@ jobs:
             android/app/build.gradle.kts \
             android/app/src/main/AndroidManifest.xml \
             pubspec.yaml
+          # Bring in official 3.1.1 dependencies and missing localization keys
+          # after preserving REC's original Android TV version/build metadata.
+          python3 scripts/merge_rec311_upstream_metadata.py
+          git add pubspec.yaml lib/l10n/app_*.arb
           # Upstream includes CRLF font-license text: don't reject legal text
           # solely for trailing whitespace after the three-way merge.
           # Upstream 3.1.1 also ships two Dart files with extra blank EOF lines.
