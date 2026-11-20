@@ -1,0 +1,116 @@
+name: Publish already verified Moonfin REC 3.1.1 APK - no rebuild
+on:
+  push:
+    branches:
+      - moonfin-rec-3.1.1-integration-20261119
+    paths:
+      - .github/workflows/rec311-recover-verified-apk.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REC_BUILD_RUN: "44772844615"
+      REC_ARTIFACT: MoonfinREC-3.1.1-AndroidTV-signed-update-REC-3.0
+      REC_APK: MoonfinREC_3.1.1_AndroidTV_update_signed.apk
+      REC_TAG: moonfin-rec-v3.1.1-definitive-2000042
+    steps:
+      - name: Check out REC integration branch and its history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Download existing signed APK, WITHOUT recompiling
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "$REC_BUILD_RUN" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$REC_ARTIFACT" \
+            --dir downloaded
+          test -s "downloaded/$REC_APK"
+          echo "Reused original Android build #$REC_BUILD_RUN; no recompilation." >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify original REC application ID and signing certificate again
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="downloaded/$REC_APK"
+          tools=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$tools/aapt" dump badging "$apk" > rec-apk-identity.txt
+          grep -F "package: name='org.moonfin.androidtv.rec'" rec-apk-identity.txt
+          grep -F "versionCode='2000042'" rec-apk-identity.txt
+          grep -F "application-label:'Moonfin REC'" rec-apk-identity.txt
+          "$tools/apksigner" verify --verbose --print-certs "$apk" > rec-apk-cert.txt
+          grep -Fi 'DA87543C1F1DD8CA6CBC13890A5D54A2E0995D78A8AD282808D4E4D94AC9B099' rec-apk-cert.txt
+          sha256sum "$apk" | sed 's@downloaded/@@' > downloaded/SHA256SUMS.txt
+          echo 'Verified org.moonfin.androidtv.rec / versionCode 2000042 / original release signature' >> "$GITHUB_STEP_SUMMARY"
+      - name: Persist official 3.1.1 merge with REC while excluding upstream CI workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Moonfin REC Integration"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          official_sha=d71d84604fbacfb5f2deb0589b1486cb22f43244
+          git merge-base --is-ancestor 5f790b5f6c17790ac8e1f41210ac6bc5dc0ff2d5 HEAD
+          if ! git merge-base --is-ancestor "$official_sha" HEAD; then
+            git remote add official-moonfin https://github.com/Moonfin-Client/Moonfin-Core.git
+            git fetch --no-tags official-moonfin refs/tags/3.1.1
+            test "$(git rev-parse FETCH_HEAD)" = "$official_sha"
+            if ! git merge --no-ff --no-commit -X ours FETCH_HEAD; then
+              test "$(git diff --name-only --diff-filter=U)" = "android/app/src/androidTv/AndroidManifest.xml"
+              git add android/app/src/androidTv/AndroidManifest.xml
+            fi
+            test -z "$(git diff --name-only --diff-filter=U)"
+            # The GITHUB_TOKEN cannot push changes to workflow files. The
+            # REC workflows are kept byte-for-byte as they were at HEAD.
+            git restore --source=HEAD --staged --worktree -- .github/workflows
+            git restore --source=HEAD --staged --worktree -- \
+              android/app/build.gradle.kts \
+              android/app/src/main/AndroidManifest.xml \
+              pubspec.yaml
+            python3 scripts/merge_rec311_upstream_metadata.py
+            git add pubspec.yaml lib/l10n/app_*.arb
+            python3 -c 'from pathlib import Path; names=["lib/playback/remote_media_notification_service.dart","test/playback/remote_media_notification_service_test.dart"]; [Path(n).write_bytes(Path(n).read_bytes().rstrip(bytes([10,13]))+bytes([10])) for n in names]'
+            git add lib/playback/remote_media_notification_service.dart test/playback/remote_media_notification_service_test.dart
+            git -c core.whitespace=-blank-at-eol diff --cached --check
+            test -f .git/MERGE_HEAD
+            test -z "$(git diff --cached --name-only | grep '^.github/workflows/' || true)"
+            git commit --no-edit
+            git merge-base --is-ancestor "$official_sha" HEAD
+            git merge-base --is-ancestor 5f790b5f6c17790ac8e1f41210ac6bc5dc0ff2d5 HEAD
+            git push origin HEAD:refs/heads/moonfin-rec-3.1.1-integration-20261119
+          fi
+          echo "Official 3.1.1 + REC source saved at $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Create definitive REC 3.1.1 GitHub release from verified APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$REC_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release already exists"
+            gh release view "$REC_TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          test -s "downloaded/$REC_APK"
+          cat > REC311_NOTES.md <<'EOF'
+          # Moonfin REC 3.1.1 - Android TV and Fire TV
+          Real integration of official Moonfin-Core 3.1.1 with Moonfin REC custom changes.
+          - Signed Android TV APK for IN-PLACE upgrade over Moonfin REC 3.0.
+          - App ID org.moonfin.androidtv.rec; versionCode 2000042.
+          - Original signing certificate SHA256: DA87543C1F1DD8CA6CBC13890A5D54A2E0995D78A8AD282808D4E4D94AC9B099.
+          - Maintains REC recording, Live TV, HEVC/DTS, Dolby Vision and bitrate corrections.
+          - Build, automated regression suite, Android app ID and signature verified.
+          - Do not uninstall existing REC 3.0; install this APK directly as an update.
+          - Test recording, HDR and codec playback on your Fire TV Cube before retiring prior backups.
+          EOF
+          gh release create "$REC_TAG" \
+            "downloaded/$REC_APK" "downloaded/SHA256SUMS.txt" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$(git rev-parse HEAD)" \
+            --title "Moonfin REC 3.1.1 DEFINITIVA 2000042 - aggiornamento REC 3.0" \
+            --notes-file REC311_NOTES.md
+          gh release view "$REC_TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url | tee -a "$GITHUB_STEP_SUMMARY"
