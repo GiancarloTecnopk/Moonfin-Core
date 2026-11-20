@@ -8,15 +8,53 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   android:
-    name: Signed Android TV 3.1 update with original REC package and settings
+    name: Merge upstream 3.1.1 plus REC fixes, test and sign in-place APK
     runs-on: ubuntu-latest
     timeout-minutes: 70
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Merge REAL official 3.1.1 into protected REC 2000041 baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Moonfin REC Integration"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          test "$(git branch --show-current)" = "moonfin-rec-3.1.1-integration-20261119"
+          git merge-base --is-ancestor 5f790b5f6c17790ac8e1f41210ac6bc5dc0ff2d5 HEAD
+          git remote add official-moonfin https://github.com/Moonfin-Client/Moonfin-Core.git
+          git fetch --no-tags official-moonfin refs/tags/3.1.1
+          OFFICIAL_311=$(git rev-parse FETCH_HEAD)
+          test "$OFFICIAL_311" = "d71d84604fbacfb5f2deb0589b1486cb22f43244"
+          printf 'Official Moonfin 3.1.1 commit: %s\n' "$OFFICIAL_311"
+          printf 'Baseline Moonfin REC commit: %s\n' "$(git rev-parse HEAD)"
+          # Standard three-way merge: keep REC changes only for directly conflicting hunks.
+          # All non-conflicting upstream changes are imported.
+          if ! git merge --no-ff --no-commit -X ours FETCH_HEAD; then
+            echo "::error::Integration conflicts require explicit resolution; refusing to publish a renamed 3.1"
+            git status --short
+            git diff --name-only --diff-filter=U
+            exit 1
+          fi
+          git diff --cached --check
+          test -f .git/MERGE_HEAD
+          test -f packages/moonfin_native_video/android/src/main/kotlin/org/moonfin/nativevideo/DtsTunnelingPolicy.kt
+          test -f packages/moonfin_native_video/android/src/main/kotlin/org/moonfin/nativevideo/HevcPacingPolicy.kt
+          test -f lib/util/live_tv_recording.dart
+          test -f lib/playback/media3_player_backend.dart
+          test -f lib/ui/screens/livetv/live_tv_player_screen.dart
+          grep -Fq 'android_tv_version: 3.1.1' pubspec.yaml
+          grep -Fq 'android_tv_build_number: 2000042' pubspec.yaml
+          grep -Fq 'val baseAppId = "org.moonfin.androidtv"' android/app/build.gradle.kts
+          grep -Fq 'if (testIdSuffix == ".rec") "Moonfin REC"' android/app/build.gradle.kts
+          echo 'Upstream official 3.1.1 merged with REC preserved pending test and signature verification.' >> "$GITHUB_STEP_SUMMARY"
+          git diff --cached --stat | tail -40
       - name: Free space for Flutter Android AOT
         shell: bash
         run: |
@@ -46,6 +84,7 @@ jobs:
           flutter pub get
           python -m pip install --disable-pip-version-check Pillow
           python scripts/apply_rec_branding.py --android
+          python3 scripts/check_rec_tv_launcher.py
       - name: Use persistent Moonfin REC signing credentials
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -70,6 +109,18 @@ jobs:
           keyPassword=$KEY_PASSWORD
           EOF
           chmod 600 android/keystore.properties
+      - name: Run REC recording, bitrate, Dolby Vision and HEVC regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter gen-l10n
+          flutter test \
+            test/data/viewmodels/recording_delete_test.dart \
+            test/util/live_tv_recording_test.dart \
+            test/playback/media3_cube3_dolby_vision_policy_test.dart \
+            test/playback/rec31_manual_bitrate_directplay_test.dart \
+            test/playback/auto_bitrate_cap_test.dart \
+            test/playback/media3_playback_health_test.dart
       - name: Check all REC Live TV API implementations before Android AOT
         shell: bash
         run: |
@@ -115,10 +166,49 @@ jobs:
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee rec31-signature.txt
           grep -Fi "$EXPECTED_CERT_SHA256" rec31-signature.txt
           echo "Signed REC 3.1.1 upgrade APK verified: matches org.moonfin.androidtv.rec, versionCode 2000042, original release signing cert. Installing will update the existing REC 3.0 installation and retain its app data if that package remains installed. REC 3.0 source branch remains unchanged." >> "$GITHUB_STEP_SUMMARY"
-      - name: Publish REC 3.1.1 signed in-place upgrade candidate
+      - name: Commit tested integration and push official 3.1.1 merged source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --cached --check
+          git -c user.name="Moonfin REC Integration" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit --no-edit
+          git merge-base --is-ancestor d71d84604fbacfb5f2deb0589b1486cb22f43244 HEAD
+          git merge-base --is-ancestor 5f790b5f6c17790ac8e1f41210ac6bc5dc0ff2d5 HEAD
+          git push origin HEAD:refs/heads/moonfin-rec-3.1.1-integration-20261119
+          echo "Integrated source commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish REC 3.1.1 signed definitive in-place upgrade
         uses: actions/upload-artifact@v4
         with:
           name: MoonfinREC-3.1.1-AndroidTV-signed-update-REC-3.0
           path: MoonfinREC_3.1.1_AndroidTV_update_signed.apk
           if-no-files-found: error
           retention-days: 14
+      - name: Create signed definitive GitHub release with checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=MoonfinREC_3.1.1_AndroidTV_update_signed.apk
+          test -s "$apk"
+          sha256sum "$apk" > SHA256SUMS.txt
+          tag=moonfin-rec-v3.1.1-definitive-2000042
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::A definitive release with this tag already exists"
+            exit 1
+          fi
+          cat > RELEASE_NOTES.md <<'EOF'
+          # Moonfin REC 3.1.1 - Final signed in-place update
+          - Based on upstream Moonfin 3.1.1, merged with tested Moonfin REC 3.1 build 2000041.
+          - Preserves the dedicated Android TV REC package org.moonfin.androidtv.rec.
+          - Same original signing certificate (SHA256 DA87543C1F1DD8CA6CBC13890A5D54A2E0995D78A8AD282808D4E4D94AC9B099).
+          - VersionCode 2000042, greater than the installed REC 3.0 build 2000035.
+          - Retains REC, Jellyfin/EPG controls, Fire TV Cube HEVC/DTS/Dolby Vision/bitrate policies and original TV launcher.
+          - Tested with automated regression suite and verified with aapt and apksigner. Device acceptance testing is still recommended.
+          - Install over existing REC 3.0; DO NOT uninstall it first, or app data may be deleted.
+          EOF
+          gh release create "$tag" "$apk" SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" --target "$(git rev-parse HEAD)" \
+            --title 'Moonfin REC 3.1.1 DEFINITIVA (2000042) - aggiornamento 3.0' \
+            --notes-file RELEASE_NOTES.md
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url --jq .url | tee -a "$GITHUB_STEP_SUMMARY"
