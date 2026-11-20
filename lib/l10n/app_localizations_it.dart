@@ -511,7 +511,7 @@ class AppLocalizationsIt extends AppLocalizations {
   String get recommendationSystemMoonfin => 'Suggerimenti Moonfin';
 
   @override
-  String get recommendationSystemJellyfin => 'Suggerimenti Jellyfin';
+  String get recommendationSystemJellyfin => 'Suggerimenti del server';
 
   @override
   String get recommendationSystemTmdb => 'Similarità TMDb';
@@ -3572,6 +3572,16 @@ class AppLocalizationsIt extends AppLocalizations {
   String get playerRecroppingBlackBars => 'Nuovo ritaglio delle bande nere';
 
   @override
+  String get playerBlackBarsCropped => 'Black bars cropped';
+
+  @override
+  String get playerNoBlackBarsFound => 'No black bars found';
+
+  @override
+  String get playerBlackBarsNotDetected =>
+      'Couldn\'t detect black bars. Try again in a brighter scene';
+
+  @override
   String get stretch => 'Estendi';
 
   @override
@@ -4850,6 +4860,28 @@ class AppLocalizationsIt extends AppLocalizations {
       'Mostra librerie da tutti i server connessi';
 
   @override
+  String get mergeLibrariesByType => 'Merge Movie and TV Show Libraries';
+
+  @override
+  String get mergeLibrariesByTypeDescription =>
+      'With multi-server libraries on, show one Movies library and one TV Shows library for all servers. A title several servers hold is listed once.';
+
+  @override
+  String mergedServerCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'On $count servers',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String mergedCopiesNotChanged(String servers) {
+    return 'Not changed on $servers';
+  }
+
+  @override
   String get recentlyAddedAndReleased => 'Recently Added and Released';
 
   @override
@@ -5100,17 +5132,7 @@ class AppLocalizationsIt extends AppLocalizations {
   String get mediaBarSourceRandom => 'Casuale';
 
   @override
-  String get mediaBarSourceNewReleases => 'Nuove Stagioni e Episodi';
-
-  @override
   String get mediaBarNewReleaseBanner => 'Banner Novità';
-
-  @override
-  String get mediaBarNewReleaseBannerDescription =>
-      'Segnala le serie con una nuova stagione o nuovi episodi trasmessi di recente.';
-
-  @override
-  String get mediaBarNewReleaseDays => 'Periodo Novità';
 
   @override
   String get mediaBarNewReleaseDaysDescription =>
@@ -5124,6 +5146,39 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get mediaBarNewEpisodes => 'Nuovi Episodi';
+
+  @override
+  String get mediaBarNewMovie => 'New Movie';
+
+  @override
+  String get mediaBarNewReleasesSection => 'New Releases';
+
+  @override
+  String get mediaBarSourceNewReleasesAll => 'New Releases';
+
+  @override
+  String get mediaBarNewReleaseBannerAllDescription =>
+      'Flag new series, seasons, episodes and movies.';
+
+  @override
+  String get mediaBarNewReleaseKinds => 'Labels';
+
+  @override
+  String get mediaBarNewEpisodeDays => 'New Episode Window';
+
+  @override
+  String get mediaBarNewMovieDays => 'New Movie Window';
+
+  @override
+  String get mediaBarNewMovieDaysDescription =>
+      'How long a movie stays new after it comes out. Theatrical movies often reach servers a while after their release, so give it longer than for episodes.';
+
+  @override
+  String get mediaBarNewMovieDetail => 'Show Tagline';
+
+  @override
+  String get mediaBarNewMovieDetailDescription =>
+      'Under New Movie, show the movie\'s tagline. With none, the label stays on its own.';
 
   @override
   String get moviesAndTvShows => 'Film e Serie TV';
@@ -5309,6 +5364,9 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get homeRowsExternalLists => 'Liste Esterne';
+
+  @override
+  String get homeRowsStreamingServices => 'Streaming Services';
 
   @override
   String get perRowSettings => 'Impostazioni per Riga';
@@ -5772,6 +5830,48 @@ class AppLocalizationsIt extends AppLocalizations {
       'Qualsiasi novità aggiunta alla libreria del server';
 
   @override
+  String get seerrTestNotification => 'Send Test Notification';
+
+  @override
+  String get seerrTestNotificationDesc =>
+      'Verify in-app and background push delivery';
+
+  @override
+  String seerrTestNotificationSentBody(num count) {
+    final intl.NumberFormat countNumberFormat = intl.NumberFormat.compact(
+      locale: localeName,
+    );
+    final String countString = countNumberFormat.format(count);
+
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$countString devices',
+      one: '1 device',
+    );
+    return 'Dispatched to $_temp0.';
+  }
+
+  @override
+  String get seerrTestNotificationPushDisabled =>
+      'In-app notification sent. Server push is not enabled.';
+
+  @override
+  String get seerrTestNotificationFailed => 'Failed to send test notification';
+
+  @override
+  String get seerrPushServerStatus => 'Server Push';
+
+  @override
+  String get seerrPushDeviceStatus => 'Device Push';
+
+  @override
+  String get seerrPushDeviceRegistered => 'Registered';
+
+  @override
+  String get seerrPushDeviceNotRegistered => 'Not registered';
+
+  @override
   String loggedInAs(String username) {
     return 'Accesso effettuato come: $username';
   }
@@ -5955,19 +6055,40 @@ class AppLocalizationsIt extends AppLocalizations {
   String get seerrImportingStatus => 'Importazione';
 
   @override
-  String get seerrWaitingForImport => 'Downloaded, waiting for import';
+  String get seerrWaitingForImport => 'Scaricato, in attesa di importazione';
 
   @override
-  String get seerrDownloadStalled => 'Stalled';
+  String get seerrDownloadStalled => 'Bloccato';
 
   @override
-  String get seerrDownloadFailed => 'Download failed';
+  String get seerrDownloadFailed => 'Download non riuscito';
 
   @override
   String get seerrImportBlocked => 'Import blocked';
 
   @override
   String get seerrNotFoundYet => 'Not found yet';
+
+  @override
+  String get seerrSearchingIndexers => 'Searching indexers';
+
+  @override
+  String seerrNotFoundYetSearched(String when) {
+    return 'Not found yet · searched $when';
+  }
+
+  @override
+  String get seerrNotAvailableYet => 'Not available yet';
+
+  @override
+  String seerrAvailableOn(String date) {
+    return 'Available $date';
+  }
+
+  @override
+  String seerrNextEpisodeOn(String date) {
+    return 'Next episode $date';
+  }
 
   @override
   String get seerrGetDifferentRelease => 'Get a different release';
@@ -11708,6 +11829,15 @@ class AppLocalizationsIt extends AppLocalizations {
   String get playerTooltipExitFloatOnTop => 'Disabilita il float in alto';
 
   @override
+  String get playerTooltipPictureInPicture => 'Picture-in-picture';
+
+  @override
+  String get playerTooltipExitPictureInPicture => 'Exit picture-in-picture';
+
+  @override
+  String get playerPlayingInPictureInPicture => 'Playing in picture-in-picture';
+
+  @override
   String get playerTooltipLockLandscape => 'Blocca il paesaggio';
 
   @override
@@ -12609,6 +12739,9 @@ class AppLocalizationsIt extends AppLocalizations {
   String get homeRowsStyleModern => 'Moderno';
 
   @override
+  String get homeRowsStyleCarousel => 'Carousel';
+
+  @override
   String get homeRowsSection => 'Righe Home';
 
   @override
@@ -12744,7 +12877,7 @@ class AppLocalizationsIt extends AppLocalizations {
   String get sinceYouWatchedSourceLocal => 'Suggerimenti Moonfin';
 
   @override
-  String get sinceYouWatchedSourceServer => 'Suggerimenti Jellyfin';
+  String get sinceYouWatchedSourceServer => 'Suggerimenti del server';
 
   @override
   String get sinceYouWatchedSourceOnline => 'Similarità TMDb';
@@ -15788,6 +15921,10 @@ class AppLocalizationsIt extends AppLocalizations {
   String get setupRowsModernHint => 'Schede più grandi con i titoli sotto.';
 
   @override
+  String get setupRowsCarouselHint =>
+      'Posters with a large details panel underneath.';
+
+  @override
   String get setupDetailClassicHint => 'Tutto centrato in un unico blocco.';
 
   @override
@@ -16599,28 +16736,29 @@ class AppLocalizationsIt extends AppLocalizations {
   String get settingsAdvancedSection => 'Avanzate';
 
   @override
-  String get settingsDecodingAndRenderingSection => 'Decoding & Rendering';
+  String get settingsDecodingAndRenderingSection => 'Decodifica e Rendering';
 
   @override
-  String get settingsAudioStreamSection => 'Audio Stream';
+  String get settingsAudioStreamSection => 'Traccia Audio';
 
   @override
-  String get settingsAudioOutputSection => 'Audio Output';
+  String get settingsAudioOutputSection => 'Uscita Audio';
 
   @override
-  String get settingsPassthroughSettingsSection => 'Passthrough Settings';
+  String get settingsPassthroughSettingsSection => 'Impostazioni Passthrough';
 
   @override
-  String get settingsSeerrHomePageRowsSection => 'Seerr Home Page Rows';
+  String get settingsSeerrHomePageRowsSection => 'Righe Seerr nella Home';
 
   @override
-  String get settingsSavedCustomHomeRowsSection => 'Saved Custom Home Rows';
+  String get settingsSavedCustomHomeRowsSection =>
+      'Righe Personalizzate Salvate';
 
   @override
-  String get settingsRewatchSection => 'Rewatch';
+  String get settingsRewatchSection => 'Da Rivedere';
 
   @override
-  String get favoritesSwitchViewSection => 'Switch View';
+  String get favoritesSwitchViewSection => 'Cambia Vista';
 
   @override
   String get playerSettingsSubtitle =>
@@ -17663,7 +17801,7 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String settingsPreviewAudioRowsOffInHomeRows(String group, String disabled) {
-    return 'Albums, Artists and Audio Playlists are all turned off. To show one, go to Rows, open $group under $disabled, and turn it on.';
+    return 'Album, Artisti e Playlist Audio sono tutti disattivati. Per mostrarne uno, vai in Righe, apri $group sotto $disabled e attivalo.';
   }
 
   @override
@@ -17672,7 +17810,7 @@ class AppLocalizationsIt extends AppLocalizations {
     String group,
     String disabled,
   ) {
-    return 'To see Albums, Artists or Audio Playlists on Home, first turn on $setting. Then go to Rows, open $group under $disabled, and turn one on.';
+    return 'Per vedere Album, Artisti o Playlist Audio nella Home, attiva prima $setting. Poi vai in Righe, apri $group sotto $disabled e attivane uno.';
   }
 
   @override
@@ -17680,7 +17818,7 @@ class AppLocalizationsIt extends AppLocalizations {
     String group,
     String disabled,
   ) {
-    return 'The Collections row is turned off. To show it, go to Rows, open $group under $disabled, and turn it on.';
+    return 'La riga Collezioni è disattivata. Per mostrarla, vai in Righe, apri $group sotto $disabled e attivala.';
   }
 
   @override
@@ -17689,42 +17827,42 @@ class AppLocalizationsIt extends AppLocalizations {
     String group,
     String disabled,
   ) {
-    return 'To see the Collections row on Home, first turn on $setting. Then go to Rows, open $group under $disabled, and turn it on.';
+    return 'Per vedere la riga Collezioni nella Home, attiva prima $setting. Poi vai in Righe, apri $group sotto $disabled e attivala.';
   }
 
   @override
   String get settingsPreviewRowsOffInKidsMode =>
-      'Kids Mode keeps these rows off Home, so these settings don\'t change it.';
+      'La Modalità Bambini tiene queste righe fuori dalla Home, quindi queste impostazioni non la cambiano.';
 
   @override
   String settingsPreviewNeedsRowInRows(String disabled) {
-    return 'Turn on a row in Rows, under $disabled';
+    return 'Attiva una riga in Righe, sotto $disabled';
   }
 
   @override
   String settingsPreviewNeedsSwitchAndRow(String setting) {
-    return 'Turn on $setting, then turn on a row in Rows';
+    return 'Attiva $setting, poi attiva una riga in Righe';
   }
 
   @override
   String get settingsPreviewKeptOffByKidsMode =>
-      'Kids Mode keeps this off Home';
+      'La Modalità Bambini la tiene fuori dalla Home';
 
   @override
   String get settingsPreviewAudioRowsEmpty =>
-      'There\'s no music to show, so Home leaves these rows out.';
+      'Non c\'è musica da mostrare, quindi la Home non mostra queste righe.';
 
   @override
   String get settingsPreviewRowsEmpty =>
-      'There\'s nothing to show in these rows, so Home leaves them out.';
+      'Non c\'è niente da mostrare in queste righe, quindi la Home non le mostra.';
 
   @override
   String get settingsPreviewCollectionsEmpty =>
-      'There are no collections to show, so Home leaves this row out.';
+      'Non ci sono collezioni da mostrare, quindi la Home non mostra questa riga.';
 
   @override
   String get settingsPreviewShowEpisodesNote =>
-      'This only changes rows for a single collection added in Rows. The Collections row looks the same.';
+      'Cambia solo le righe di una singola collezione aggiunta in Righe. La riga Collezioni resta uguale.';
 
   @override
   String get settingsPreviewSaved => 'Salvato';
@@ -18358,4 +18496,30 @@ class AppLocalizationsIt extends AppLocalizations {
   @override
   String get afterHoursPixelPurgeCardRemote =>
       'Sinistra e Destra spostano la barra di scorrimento.';
+
+  @override
+  String get remoteMediaNotificationTitle => 'Remote playback notification';
+
+  @override
+  String get remoteMediaNotificationSubtitle =>
+      'Show system media controls when watching on another device';
+
+  @override
+  String get remoteActivityWatching => 'Watching on Moonfin';
+
+  @override
+  String get remoteActivityListening => 'Listening on Moonfin';
+
+  @override
+  String get clickpadSeeking => 'Allow Clickpad Seeking';
+
+  @override
+  String get clickpadSeekingDescription =>
+      'When Left, Right and touchpad swipes can seek. Otherwise the first one brings up the controls.';
+
+  @override
+  String get clickpadSeekingControlsVisible => 'When controls are showing';
+
+  @override
+  String get clickpadSeekingPausedOnly => 'Only while paused';
 }

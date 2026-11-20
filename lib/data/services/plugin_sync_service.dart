@@ -118,6 +118,9 @@ class PluginSyncService extends ChangeNotifier {
   /// TMDB overview, score, logo and trailer.
   bool _tmdbDetailsSupported = false;
   bool get tmdbDetailsAvailable => _pluginAvailable && _tmdbDetailsSupported;
+
+  /// Whether the plugin serves the JustWatch and TMDB discover chart rows.
+  bool _discoverChartsSupported = false;
   bool _recommendationsSupported = false;
   bool get recommendationsSupported =>
       _pluginAvailable && _recommendationsSupported;
@@ -139,6 +142,17 @@ class PluginSyncService extends ChangeNotifier {
     bool Function()? serverBuildsSeasonal,
   }) {
     if (prefs.imdbChartSections.contains(type)) return _pluginAvailable;
+    if (prefs.externalCharts[type] case final chart?) {
+      if (!_pluginAvailable ||
+          (chart.needsDiscoverCharts && !_discoverChartsSupported)) {
+        return false;
+      }
+      return chart.usesMdblist
+          ? _mdblistAvailable ||
+                _prefs.get(UserPreferences.mdblistApiKey).trim().isNotEmpty
+          : _tmdbAvailable ||
+                _prefs.get(UserPreferences.tmdbApiKey).trim().isNotEmpty;
+    }
     if (UserPreferences.isTmdbSectionType(type)) {
       return _pluginAvailable &&
           (_tmdbAvailable ||
@@ -173,6 +187,11 @@ class PluginSyncService extends ChangeNotifier {
   /// plugin, or none at all, leaves it false.
   bool _clientLogSupported = false;
   bool get clientLogSupported => _pluginAvailable && _clientLogSupported;
+
+  /// Whether the plugin can deliver push, which is what starts Firebase on a
+  /// phone. Older plugins leave the flag out and all of them could push.
+  bool _pushSupported = false;
+  bool get pushSupported => _pluginAvailable && _pushSupported;
   String? _activeThemeCacheServerId;
 
   final _seerrNotifications =
@@ -303,6 +322,7 @@ class PluginSyncService extends ChangeNotifier {
     _tmdbPersonLinksSupported = false;
     _tmdbReviewsSupported = false;
     _tmdbDetailsSupported = false;
+    _discoverChartsSupported = false;
     _recommendationsSupported = false;
     _smartSearchEnabled = false;
     _calendarAvailable = false;
@@ -311,6 +331,7 @@ class PluginSyncService extends ChangeNotifier {
     _calendarReminders = false;
     _arrQueueAvailable = false;
     _clientLogSupported = false;
+    _pushSupported = false;
     if (!keepIncompleteRecordings) _incompleteRecordings?.setSupported(false);
     _activeThemeCacheServerId = null;
     if (notify) {
@@ -414,6 +435,8 @@ class PluginSyncService extends ChangeNotifier {
           _readBool(pingResult, 'tmdbReviewsSupported') ?? false;
       _tmdbDetailsSupported =
           _readBool(pingResult, 'tmdbDetailsSupported') ?? false;
+      _discoverChartsSupported =
+          _readBool(pingResult, 'discoverChartsSupported') ?? false;
       _recommendationsSupported =
           _readBool(pingResult, 'recommendationsSupported') ?? false;
       _smartSearchEnabled =
@@ -428,6 +451,7 @@ class PluginSyncService extends ChangeNotifier {
         _readBool(pingResult, 'messagesSupported') ?? false,
       );
       _clientLogSupported = _readBool(pingResult, 'clientLogSupported') ?? false;
+      _pushSupported = _readBool(pingResult, 'pushSupported') ?? true;
       // The Emby port and older plugins leave this out, which hides the feature.
       _incompleteRecordings?.setSupported(
         _readBool(pingResult, 'incompleteRecordingsSupported') ?? false,
@@ -1100,6 +1124,37 @@ class PluginSyncService extends ChangeNotifier {
         ),
       );
     } catch (_) {}
+  }
+
+  /// Asks the plugin to send the signed-in user a test notification, in-app and
+  /// as a push.
+  Future<({bool success, bool pushEnabled, int devicesCount})?>
+  sendTestNotification(MediaServerClient client) async {
+    if (!_pluginAvailable || !client.features.supportsPushNotifications) {
+      return null;
+    }
+
+    try {
+      final ep = await moonbaseEndpoint(client, _dio);
+      if (ep == null) return null;
+      final response = await _dio.post(
+        '${ep.base}/Moonfin/Notifications/Test',
+        options: Options(headers: ep.headers),
+      );
+      final data = response.data;
+      if (data is Map<String, dynamic>) {
+        return (
+          success: data['success'] == true,
+          pushEnabled: data['pushEnabled'] == true,
+          devicesCount: data['devicesCount'] is int
+              ? data['devicesCount'] as int
+              : 0,
+        );
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Whether a collection's custom order can be read and saved for
