@@ -52,7 +52,16 @@ jobs:
             fi
           fi
           test -z "$(git diff --name-only --diff-filter=U)"
-          git diff --cached --check
+          # Official 3.1.1 unifies Android variants and removes the TV flavor.
+          # REC 3.0 updates require the existing Android TV flavor, app ID,
+          # signing and launcher. Preserve build plumbing, not upstream code.
+          git restore --source=HEAD --staged --worktree -- \
+            android/app/build.gradle.kts \
+            android/app/src/main/AndroidManifest.xml \
+            pubspec.yaml
+          # Upstream includes CRLF font-license text: don't reject legal text
+          # solely for trailing whitespace after the three-way merge.
+          git -c core.whitespace=-blank-at-eol diff --cached --check
           test -f .git/MERGE_HEAD
           test -f packages/moonfin_native_video/android/src/main/kotlin/org/moonfin/nativevideo/DtsTunnelingPolicy.kt
           test -f packages/moonfin_native_video/android/src/main/kotlin/org/moonfin/nativevideo/HevcPacingPolicy.kt
