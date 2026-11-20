@@ -61,6 +61,19 @@ jobs:
             pubspec.yaml
           # Upstream includes CRLF font-license text: don't reject legal text
           # solely for trailing whitespace after the three-way merge.
+          # Upstream 3.1.1 also ships two Dart files with extra blank EOF lines.
+          # Normalize only these known upstream files, not any REC playback code.
+          python3 - <<'PY'
+          from pathlib import Path
+          for name in (
+              "lib/playback/remote_media_notification_service.dart",
+              "test/playback/remote_media_notification_service_test.dart",
+          ):
+              path = Path(name)
+              data = path.read_bytes()
+              path.write_bytes(data.rstrip(b"\r\n") + b"\n")
+          PY
+          git add lib/playback/remote_media_notification_service.dart test/playback/remote_media_notification_service_test.dart
           git -c core.whitespace=-blank-at-eol diff --cached --check
           test -f .git/MERGE_HEAD
           test -f packages/moonfin_native_video/android/src/main/kotlin/org/moonfin/nativevideo/DtsTunnelingPolicy.kt
