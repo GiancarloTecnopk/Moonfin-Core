@@ -202,16 +202,6 @@ jobs:
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee rec31-signature.txt
           grep -Fi "$EXPECTED_CERT_SHA256" rec31-signature.txt
           echo "Signed REC 3.1.1 upgrade APK verified: matches org.moonfin.androidtv.rec, versionCode 2000042, original release signing cert. Installing will update the existing REC 3.0 installation and retain its app data if that package remains installed. REC 3.0 source branch remains unchanged." >> "$GITHUB_STEP_SUMMARY"
-      - name: Commit tested integration and push official 3.1.1 merged source
-        shell: bash
-        run: |
-          set -euo pipefail
-          git diff --cached --check
-          git -c user.name="Moonfin REC Integration" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit --no-edit
-          git merge-base --is-ancestor d71d84604fbacfb5f2deb0589b1486cb22f43244 HEAD
-          git merge-base --is-ancestor 5f790b5f6c17790ac8e1f41210ac6bc5dc0ff2d5 HEAD
-          git push origin HEAD:refs/heads/moonfin-rec-3.1.1-integration-20261119
-          echo "Integrated source commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
       - name: Publish REC 3.1.1 signed definitive in-place upgrade
         uses: actions/upload-artifact@v4
         with:
@@ -219,6 +209,17 @@ jobs:
           path: MoonfinREC_3.1.1_AndroidTV_update_signed.apk
           if-no-files-found: error
           retention-days: 14
+      - name: Commit tested integration and push official 3.1.1 merged source
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Upstream includes CRLF font-license text; this was already checked during merge.
+          git -c core.whitespace=-blank-at-eol diff --cached --check
+          git -c user.name="Moonfin REC Integration" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit --no-edit
+          git merge-base --is-ancestor d71d84604fbacfb5f2deb0589b1486cb22f43244 HEAD
+          git merge-base --is-ancestor 5f790b5f6c17790ac8e1f41210ac6bc5dc0ff2d5 HEAD
+          git push origin HEAD:refs/heads/moonfin-rec-3.1.1-integration-20261119
+          echo "Integrated source commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
       - name: Create signed definitive GitHub release with checksum
         env:
           GH_TOKEN: ${{ github.token }}
