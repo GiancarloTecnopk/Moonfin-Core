@@ -37,11 +37,21 @@ jobs:
           # Standard three-way merge: keep REC changes only for directly conflicting hunks.
           # All non-conflicting upstream changes are imported.
           if ! git merge --no-ff --no-commit -X ours FETCH_HEAD; then
-            echo "::error::Integration conflicts require explicit resolution; refusing to publish a renamed 3.1"
-            git status --short
-            git diff --name-only --diff-filter=U
-            exit 1
+            # Upstream 3.1.1 unified Android packaging and deleted its TV manifest.
+            # REC must KEEP its dedicated TV overlay to preserve the installed
+            # org.moonfin.androidtv.rec app, Leanback launcher, icon and banner.
+            conflicts="$(git diff --name-only --diff-filter=U)"
+            if test "$conflicts" = "android/app/src/androidTv/AndroidManifest.xml"; then
+              echo "Preserving REC Android TV manifest: upstream deleted this file"
+              git add android/app/src/androidTv/AndroidManifest.xml
+            else
+              echo "::error::Unexpected unresolved merge conflicts; refusing a partial integration"
+              git status --short
+              printf '%s\n' "$conflicts"
+              exit 1
+            fi
           fi
+          test -z "$(git diff --name-only --diff-filter=U)"
           git diff --cached --check
           test -f .git/MERGE_HEAD
           test -f packages/moonfin_native_video/android/src/main/kotlin/org/moonfin/nativevideo/DtsTunnelingPolicy.kt
