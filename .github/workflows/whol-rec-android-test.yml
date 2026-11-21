@@ -9,7 +9,7 @@ on:
       - whol_rec_overlay/**
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   android:
     name: Build isolated Wholphin REC Kotlin TV test
@@ -126,3 +126,31 @@ jobs:
             whol-rec-identity.txt
           if-no-files-found: error
           retention-days: 30
+      - name: Publish persistently signed APK as a permanent GitHub pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=WholphinREC_Jellyfin12_FireTV_TEST.apk
+          test -s "$apk"
+          tag="whol-rec-persistent-$GITHUB_RUN_NUMBER"
+          cat > WHOL_REC_RELEASE_NOTES.md <<'EOF'
+          # Wholphin REC - signed test with permanent certificate
+          - Experimental client for Jellyfin 12 / Fire TV Cube.
+          - REC manual without EPG, STOP REC, indicator, confirmation, duration selection.
+          - Original Wholphin player engines unchanged.
+          - Consistent package: com.github.damontecres.wholphin.wholrec.debug
+          - Signed with the existing persistent project release key on every build.
+          - Future builds have incrementing versionCode and install IN PLACE, preserving Jellyfin login and settings.
+          - IMPORTANT: Old Wholphin REC Test 1 and Test 2 used random debug keys. The first
+            migration from an old Test 1/Test 2 requires uninstalling ONLY Wholphin REC Test,
+            then installing this persistent-key APK. Future updates MUST NOT require uninstall.
+          - Do not uninstall Moonfin REC: different package, unchanged.
+          EOF
+          gh release create "$tag" "$apk" WholphinREC_SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --prerelease --latest=false \
+            --title "Wholphin REC - persistent signed Fire TV TEST $GITHUB_RUN_NUMBER" \
+            --notes-file WHOL_REC_RELEASE_NOTES.md
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url --jq .url | tee -a "$GITHUB_STEP_SUMMARY"
