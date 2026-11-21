@@ -18,6 +18,12 @@ jobs:
     env:
       GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8"
       CI: "true"
+      # The original persistent signing key is already stored in repository Secrets.
+      SIGNING_KEY: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      KEY_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+      KEY_STORE_TYPE: ${{ secrets.ANDROID_KEYSTORE_TYPE }}
     steps:
       - name: Checkout our isolated REC overlay branch
         uses: actions/checkout@v4
@@ -53,14 +59,25 @@ jobs:
         uses: android-actions/setup-android@v4
         with:
           packages: "platform-tools build-tools;36.0.0"
+      - name: Verify permanent signing credentials exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SIGNING_KEY"
+          test -n "$KEY_ALIAS"
+          test -n "$KEY_PASSWORD"
+          test -n "$KEY_STORE_PASSWORD"
+          echo 'Persistent keystore configured. Wholphin REC will retain app ID and signer.' >> "$GITHUB_STEP_SUMMARY"
       - name: Apply our manual REC/STOP and dedicated TV package
         shell: bash
         run: |
           set -euo pipefail
           python3 scripts/apply_whol_rec.py wholphin-upstream
           grep -Fq 'com.github.damontecres.wholphin.wholrec' wholphin-upstream/app/build.gradle.kts
-          grep -Fq 'versionName = "1.2.0-2-gwholrec"' wholphin-upstream/app/build.gradle.kts
-          grep -Fq 'versionCode = 20001002' wholphin-upstream/app/build.gradle.kts
+          expected_code=$((20001000 + GITHUB_RUN_NUMBER))
+          grep -Fq "versionCode = $expected_code" wholphin-upstream/app/build.gradle.kts
+          grep -Fq 'signingConfig = signingConfigs.getByName("ci")' wholphin-upstream/app/build.gradle.kts
+          echo "Wholphin REC build $GITHUB_RUN_NUMBER; versionCode $expected_code" >> "$GITHUB_STEP_SUMMARY"
           grep -Fq 'suspend fun startManualRecording(' wholphin-upstream/app/src/main/java/com/github/damontecres/wholphin/services/LiveTvService.kt
           grep -Fq 'WholRecControls(' wholphin-upstream/app/src/main/java/com/github/damontecres/wholphin/ui/playback/PlaybackPage.kt
       - name: Compile and run manual REC timer isolation tests
@@ -79,7 +96,7 @@ jobs:
           set -euo pipefail
           ./gradlew --no-daemon --max-workers=2 :app:assembleDefaultDebug
           find app/build/outputs/apk/default/debug -name '*.apk' -type f -ls
-      - name: Verify different package name and debug APK signature
+      - name: Verify REC package and persistent original signing certificate
         shell: bash
         run: |
           set -euo pipefail
@@ -93,14 +110,16 @@ jobs:
           "$tools/aapt" dump badging "../WholphinREC_Jellyfin12_FireTV_TEST.apk" | tee ../whol-rec-identity.txt
           grep -F "package: name='com.github.damontecres.wholphin.wholrec.debug'" ../whol-rec-identity.txt
           grep -F "application-label:'Wholphin REC Test'" ../whol-rec-identity.txt
+          grep -F "versionCode='$((20001000 + GITHUB_RUN_NUMBER))'" ../whol-rec-identity.txt
           "$tools/apksigner" verify --verbose --print-certs "../WholphinREC_Jellyfin12_FireTV_TEST.apk" | tee ../whol-rec-signature.txt
+          grep -Fi 'DA87543C1F1DD8CA6CBC13890A5D54A2E0995D78A8AD282808D4E4D94AC9B099' ../whol-rec-signature.txt
           cd ..
           sha256sum WholphinREC_Jellyfin12_FireTV_TEST.apk > WholphinREC_SHA256SUMS.txt
-          echo 'REC without EPG + STOP and TV OSD compiled and debug-signed; install beside Moonfin REC and upstream Wholphin' >> "$GITHUB_STEP_SUMMARY"
+          echo 'REC without EPG + STOP and TV OSD built and persistently signed; future APKs update in place by versionCode.' >> "$GITHUB_STEP_SUMMARY"
       - name: Publish test APK for Fire TV Cube
         uses: actions/upload-artifact@v4
         with:
-          name: WholphinREC-Jellyfin12-FireTV-TEST
+          name: WholphinREC-Jellyfin12-FireTV-PERSISTENT-SIGNED
           path: |
             WholphinREC_Jellyfin12_FireTV_TEST.apk
             WholphinREC_SHA256SUMS.txt
