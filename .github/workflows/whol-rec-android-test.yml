@@ -59,6 +59,8 @@ jobs:
           set -euo pipefail
           python3 scripts/apply_whol_rec.py wholphin-upstream
           grep -Fq 'com.github.damontecres.wholphin.wholrec' wholphin-upstream/app/build.gradle.kts
+          grep -Fq 'versionName = "1.2.0-2-gwholrec"' wholphin-upstream/app/build.gradle.kts
+          grep -Fq 'versionCode = 20001002' wholphin-upstream/app/build.gradle.kts
           grep -Fq 'suspend fun startManualRecording(' wholphin-upstream/app/src/main/java/com/github/damontecres/wholphin/services/LiveTvService.kt
           grep -Fq 'WholRecControls(' wholphin-upstream/app/src/main/java/com/github/damontecres/wholphin/ui/playback/PlaybackPage.kt
       - name: Compile and run manual REC timer isolation tests
@@ -68,7 +70,8 @@ jobs:
           set -euo pipefail
           chmod +x gradlew
           ./gradlew --no-daemon --max-workers=2 :app:testDefaultDebugUnitTest \
-            --tests com.github.damontecres.wholphin.services.WholRecTimerPolicyTest
+            --tests com.github.damontecres.wholphin.services.WholRecTimerPolicyTest \
+            --tests com.github.damontecres.wholphin.util.WholRecVersionTest
       - name: Build Android TV APK with Wholphin original playback engines
         shell: bash
         working-directory: wholphin-upstream
