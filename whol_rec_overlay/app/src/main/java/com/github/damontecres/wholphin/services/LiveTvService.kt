@@ -4,6 +4,7 @@ import com.github.damontecres.wholphin.data.model.BaseItem
 import com.github.damontecres.wholphin.ui.toServerString
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.liveTvApi
+import org.jellyfin.sdk.model.api.SeriesTimerInfoDto
 import org.jellyfin.sdk.model.api.TimerInfoDto
 import java.time.LocalDateTime
 import java.time.ZoneOffset
@@ -69,17 +70,16 @@ class LiveTvService @Inject constructor(
     ) {
         require(minutes in 1..480) { "Recording duration must be between 1 and 480 minutes" }
         check(activeManualRecording(channelId) == null) { "A Whol REC recording is already active" }
-        val now = LocalDateTime.now(ZoneOffset.UTC)
-        val timer = TimerInfoDto(
+        // Jellyfin uses ServiceName to select the DVR backend. Omitting it
+        // causes GetService(null) to throw and POST /LiveTv/Timers to return
+        // HTTP 500. Obtain the server's actual settings; never invent one.
+        val defaults by api.liveTvApi.getDefaultTimer()
+        val timer = createManualTimerFromDefaults(
+            defaults = defaults,
             channelId = channelId,
             channelName = channelName,
-            name = "Whol REC - " + channelName,
-            startDate = now.minusSeconds(5),
-            endDate = now.plusMinutes(minutes.toLong()),
-            prePaddingSeconds = 0,
-            postPaddingSeconds = 0,
-            isPrePaddingRequired = false,
-            isPostPaddingRequired = false,
+            minutes = minutes,
+            now = LocalDateTime.now(ZoneOffset.UTC),
         )
         api.liveTvApi.createTimer(timer)
     }
@@ -112,4 +112,42 @@ internal fun selectActiveWholRecTimer(
         !timer.id.isNullOrEmpty() &&
         timer.startDate?.isAfter(now) == false &&
         timer.endDate?.isAfter(now) == true
+}
+
+/**
+ * Creates a manual (no EPG) DVR timer from Jellyfin's own defaults.
+ *
+ * LiveTvManager.CreateTimer resolves the service using timer.ServiceName
+ * before it converts the internal channel UUID to its provider channel ID.
+ * A locally constructed TimerInfoDto without ServiceName fails with HTTP 500.
+ * Never set ProgramId for manual recording: there may be no guide program.
+ */
+internal fun createManualTimerFromDefaults(
+    defaults: SeriesTimerInfoDto,
+    channelId: UUID,
+    channelName: String,
+    minutes: Int,
+    now: LocalDateTime,
+): TimerInfoDto {
+    require(minutes in 1..480) { "Recording duration must be between 1 and 480 minutes" }
+    val service = defaults.serviceName?.takeIf { it.isNotBlank() }
+        ?: error("Jellyfin DVR non configurato: manca ServiceName nei timer predefiniti")
+    return TimerInfoDto(
+        type = defaults.type,
+        serverId = defaults.serverId,
+        serviceName = service,
+        channelId = channelId,
+        channelName = channelName,
+        programId = null,
+        externalProgramId = null,
+        name = "Whol REC - " + channelName,
+        startDate = now.minusSeconds(5),
+        endDate = now.plusMinutes(minutes.toLong()),
+        priority = defaults.priority,
+        keepUntil = defaults.keepUntil,
+        prePaddingSeconds = 0,
+        postPaddingSeconds = 0,
+        isPrePaddingRequired = false,
+        isPostPaddingRequired = false,
+    )
 }
