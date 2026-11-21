@@ -4,13 +4,13 @@ import org.jellyfin.sdk.model.api.TimerInfoDto
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
-import java.time.OffsetDateTime
+import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.util.UUID
 
 class WholRecTimerPolicyTest {
     private val channel = UUID.randomUUID()
-    private val now = OffsetDateTime.now(ZoneOffset.UTC)
+    private val now = LocalDateTime.now(ZoneOffset.UTC)
 
     @Test
     fun activeManualTimerOnChannelIsSelected() {
