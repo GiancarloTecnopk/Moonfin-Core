@@ -25,7 +25,9 @@ con Moonfin REC sullo stesso contenuto e server Jellyfin 12.
 ## Compilazione
 L'azione GitHub `whol-rec-android-test.yml` recupera la versione ufficiale
 Wholphin al commit bloccato, applica gli overlay e compila un APK Android TV
-di test con firma debug; un artifact APK viene caricato solo se i test passano.
+di test con firma **persistente** usando i Secrets già configurati nel repository
+per Moonfin REC; un artifact e una release GitHub vengono pubblicati solo se
+test, compilazione e controllo SHA256 del certificato sono riusciti.
 Per applicare in locale:
 ```bash
 git clone https://github.com/damontecres/Wholphin.git wholphin-upstream
@@ -49,3 +51,17 @@ La partenza immediata senza EPG e lo stop sono soggetti al comportamento DVR
 del server e al backend Live TV. I controlli automatici non sostituiscono un
 collaudo reale. I pulsanti EPG/librerie personalizzati di Moonfin REC **non
 sono ancora in questa build sperimentale**: verranno aggiunti dopo i test.
+
+## Aggiornamenti senza perdita dei dati
+- Il package rimane sempre `com.github.damontecres.wholphin.wholrec.debug`.
+- La pipeline usa la stessa chiave di firma persistente dai GitHub Secrets
+  (non genera più una chiave Debug casuale ad ogni build).
+- Il `versionCode` è `20001000 + GITHUB_RUN_NUMBER`; cresce automaticamente
+  a ogni nuova esecuzione del workflow.
+- Ogni APK firmato viene verificato contro il certificato atteso e pubblicato
+  in una GitHub pre-release permanente.
+- **Unica eccezione:** passaggio da Test 1/Test 2, firmate con chiavi casuali,
+  alla prima versione a firma persistente. Android richiede di disinstallare
+  **soltanto Wholphin REC Test** una volta. Le installazioni successive possono
+  usare `adb install -r nome.apk` senza perdere autenticazione e preferenze.
+- Mai disinstallare Moonfin REC: package distinto.
