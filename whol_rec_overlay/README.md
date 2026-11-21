@@ -17,6 +17,36 @@ di build. Il codice Wholphin originale viene recuperato dal commit bloccato
 - Evita il crash nel DVR per programmi mancanti (`programInfo == null`)
 - Identità separata `com.github.damontecres.wholphin.wholrec.debug` per affiancare Wholphin e Moonfin REC
 
+## Wholphin REC — integrazione EPG e NAS (prossima build)
+
+- **Registrazioni da EPG:** conserviamo `ProgramDialog` Wholphin,
+  già dotato di REC programma singolo / serie e annullamento timer.
+- **REC manuale senza EPG:** pulsante OSD con durata e STOP confermato.
+- **Timer DVR:** nuovo pannello con elenco timer Jellyfin, date e
+  cancellazione protetta dei soli timer manuali Whol REC.
+- **Aggiorna EPG:** richiama l'attività amministrativa Jellyfin
+  `RefreshGuide` tramite `GET /ScheduledTasks` e
+  `POST /ScheduledTasks/Running/{Id}` (stesso flusso della Moonfin REC).
+- **Aggiorna librerie:** richiama `POST /Library/Refresh` con la sessione
+  Jellyfin autenticata (richiede permessi di amministratore).
+- **Aggiorna liste IPTV del Synology:** richiama in POST un endpoint
+  configurabile NAS/Home Assistant. L'app NON inventa endpoint né
+  modifica direttamente gli script `PG_IPTV_Jellyfin_AutoUpdate.py`
+  o `aggiorna_epg.py`: serve collegarli una sola volta a un servizio
+  HTTP protetto. Non salvare password amministrative nel codice APK.
+- **Pannello:** accessibile sia da Impostazioni principali sia dalla guida EPG.
+- **Branding:** icona distinta cyan/blu con pinna, badge REC rosso, nome
+  *Wholphin REC* e banner Android TV / Fire TV, generati per tutte le
+  densità nel processo di build da `generate_whol_rec_branding.py`.
+- **Firma/identità:** invariati package
+  `com.github.damontecres.wholphin.wholrec.debug` e SHA256 della firma
+  persistente. Il versionCode cresce automaticamente, quindi l'APK
+  aggiorna quello installato senza cancellare le impostazioni.
+
+L'integrazione del codice non implica che gli script NAS siano eseguibili
+finché non viene configurato un endpoint HTTP reale nel pannello. I comandi
+DVR/EPG devono essere collaudati sul backend Jellyfin 12 e sul Fire TV Cube.
+
 ## Player
 **Nessuna alterazione** di ExoPlayer/MPV, HDR, Dolby Vision, selezione audio e
 streaming: l'esperimento deve confrontare la qualità originale di Wholphin
@@ -49,8 +79,7 @@ cd wholphin-upstream && ./gradlew :app:assembleDefaultDebug
 ## Limiti da testare
 La partenza immediata senza EPG e lo stop sono soggetti al comportamento DVR
 del server e al backend Live TV. I controlli automatici non sostituiscono un
-collaudo reale. I pulsanti EPG/librerie personalizzati di Moonfin REC **non
-sono ancora in questa build sperimentale**: verranno aggiunti dopo i test.
+collaudo reale. I comandi EPG/librerie e il bridge IPTV sono inclusi nel ramo di integrazione, ma devono ancora superare la compilazione e il collaudo NAS.
 
 ## Aggiornamenti senza perdita dei dati
 - Il package rimane sempre `com.github.damontecres.wholphin.wholrec.debug`.

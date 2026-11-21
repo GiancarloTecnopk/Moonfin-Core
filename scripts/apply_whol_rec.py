@@ -8,6 +8,7 @@ null-safe DVR scheduling are changed.
 from pathlib import Path
 import os
 import shutil
+import subprocess
 import sys
 
 if len(sys.argv) != 2:
@@ -138,6 +139,84 @@ update(
     "                            } // Manual REC timers are tracked in Live TV OSD",
 )
 
+# Live TV EPG: retain the official per-program and series REC dialog, and add
+# our management console for EPG refresh, NAS IPTV list refresh, library scan
+# and manual DVR timers.
+guide = "app/src/main/java/com/github/damontecres/wholphin/ui/detail/livetv/TvGuideGrid.kt"
+update(
+    guide,
+    "import androidx.tv.material3.MaterialTheme",
+    "import androidx.tv.material3.Button\nimport androidx.tv.material3.MaterialTheme",
+)
+update(
+    guide,
+    "    var showViewOptions by remember { mutableStateOf(false) }",
+    "    var showViewOptions by remember { mutableStateOf(false) }\n"
+    "    var showWholTools by remember { mutableStateOf(false) }",
+)
+update(
+    guide,
+    "                    TvGuideGridContent(",
+    """                    if (focusedPosition.row < 1) {
+                        Button(
+                            onClick = { showWholTools = true },
+                            modifier = Modifier.padding(start = tvGuideDimensions.channelWidth),
+                        ) {
+                            Text("REC • EPG / Liste / Librerie")
+                        }
+                    }
+                    TvGuideGridContent(""",
+)
+update(
+    guide,
+    "    if (showViewOptions) {",
+    """    if (showWholTools) {
+        WholRecToolsDialog(onDismiss = { showWholTools = false })
+    }
+    if (showViewOptions) {""",
+)
+
+# Settings: also expose the same tools outside Live TV (accessible via remote
+# even if the server has no tuner/EPG configured).
+settings = "app/src/main/java/com/github/damontecres/wholphin/ui/preferences/PreferencesContent.kt"
+update(
+    settings,
+    "import com.github.damontecres.wholphin.ui.components.ConfirmDialog",
+    "import com.github.damontecres.wholphin.ui.detail.livetv.WholRecToolsDialog\n"
+    "import com.github.damontecres.wholphin.ui.components.ConfirmDialog",
+)
+update(
+    settings,
+    "    var showVersionDialog by remember { mutableStateOf(false) }",
+    "    var showVersionDialog by remember { mutableStateOf(false) }\n"
+    "    var showWholRecTools by remember { mutableStateOf(false) }",
+)
+update(
+    settings,
+    "            ) {\n                serverVersionMessage?.let { message ->",
+    """            ) {
+                if (preferenceScreenOption == PreferenceScreenOption.BASIC) {
+                    item {
+                        ListItem(
+                            selected = false,
+                            onClick = { showWholRecTools = true },
+                            headlineContent = { Text("Wholphin REC • TV e registrazioni") },
+                            supportingContent = { Text("EPG, timer, liste IPTV NAS e librerie Jellyfin") },
+                        )
+                    }
+                }
+                serverVersionMessage?.let { message ->""",
+)
+update(
+    settings,
+    "    if (showLocaleChoiceDialog) {\n        LocaleChoiceDialog(",
+    """    if (showWholRecTools) {
+        WholRecToolsDialog(onDismiss = { showWholRecTools = false })
+    }
+    if (showLocaleChoiceDialog) {
+        LocaleChoiceDialog(""",
+)
+
 # Unique package: can coexist with upstream Wholphin and Moonfin REC.
 gradle = "app/build.gradle.kts"
 update(
@@ -202,5 +281,9 @@ update(res, '<string name="app_name" translatable="false">Wholphin</string>',
        '<string name="app_name" translatable="false">Wholphin REC Test</string>')
 update(res, '<string name="app_name_long" translatable="false">Wholphin</string>',
        '<string name="app_name_long" translatable="false">Wholphin REC Test</string>')
+# Generate distinct launcher and banner for Android TV and Fire TV.
+# Preserve the source in this branch and re-render all density variants.
+subprocess.run([sys.executable, str(repo / "scripts/generate_whol_rec_branding.py"), str(root)], check=True)
+
 print(f"Whol REC build version: {rec_version_name} ({rec_version_code}); persistent CI signing for debug and release.")
 print("Whol REC overlay successfully applied (Jellyfin DVR manual REC / STOP / TV OSD).")
