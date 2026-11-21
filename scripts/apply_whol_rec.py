@@ -111,6 +111,15 @@ update(
     'return Version.tryFromString(pkgInfo.versionName) ?: Version(1, 2, 0)',
 )
 
+# The existing project secret is valid base64 with line wrapping. Wholphin's
+# strict Base64.getDecoder() rejects embedded CR/LF; MIME decoder accepts
+# wrapped base64 exactly as GNU base64 --decode did for Moonfin REC.
+update(
+    gradle,
+    'Base64.getDecoder().decode(System.getenv("SIGNING_KEY"))',
+    'Base64.getMimeDecoder().decode(System.getenv("SIGNING_KEY"))',
+)
+
 # Wholphin already provides persistent CI signing for release builds. Use the
 # EXACT SAME CI signing configuration for debug REC packages. Without this
 # change GitHub runners generate a new random ~/.android/debug.keystore each
