@@ -8,6 +8,7 @@ null-safe DVR scheduling are changed.
 from pathlib import Path
 import os
 import shutil
+import subprocess
 import sys
 
 if len(sys.argv) != 2:
@@ -280,5 +281,9 @@ update(res, '<string name="app_name" translatable="false">Wholphin</string>',
        '<string name="app_name" translatable="false">Wholphin REC Test</string>')
 update(res, '<string name="app_name_long" translatable="false">Wholphin</string>',
        '<string name="app_name_long" translatable="false">Wholphin REC Test</string>')
+# Generate distinct launcher and banner for Android TV and Fire TV.
+# Preserve the source in this branch and re-render all density variants.
+subprocess.run([sys.executable, str(repo / "scripts/generate_whol_rec_branding.py"), str(root)], check=True)
+
 print(f"Whol REC build version: {rec_version_name} ({rec_version_code}); persistent CI signing for debug and release.")
 print("Whol REC overlay successfully applied (Jellyfin DVR manual REC / STOP / TV OSD).")
