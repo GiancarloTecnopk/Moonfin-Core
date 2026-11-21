@@ -49,7 +49,7 @@ def update(relative, anchor, replacement):
 # credentials, and allows the user to see the real error.
 update(
     "app/src/main/java/com/github/damontecres/wholphin/services/HomeSettingsService.kt",
-    "            val resolvedSettings = settings ?: createDefault(user.id)\\n"
+    "            val resolvedSettings = settings ?: createDefault(user.id)\n"
     "            currentSettings.update { resolvedSettings }",
     """            val resolvedSettings =
                 settings ?: try {
