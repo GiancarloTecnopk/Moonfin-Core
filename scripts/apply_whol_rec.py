@@ -63,6 +63,42 @@ update(
             currentSettings.update { resolvedSettings }""",
 )
 
+# Home startup bug in upstream Wholphin: it waits for the optional companion
+# server plugin probe before starting to load the Home configuration. When the
+# optional endpoint stalls, other tabs work but Home spins forever. Start Home
+# settings immediately and probe the optional plugin independently.
+update(
+    "app/src/main/java/com/github/damontecres/wholphin/services/UserSwitchListener.kt",
+    """                // Check if plugin is installed, then for home settings & seerr settings
+                launchIO {""",
+    """                // Home must not depend on the optional Wholphin plugin probe.
+                launchIO {
+                    homeSettingsService.loadCurrentSettings(user)
+                }
+
+                // Probe companion server plugin independently.
+                launchIO {""",
+)
+update(
+    "app/src/main/java/com/github/damontecres/wholphin/services/UserSwitchListener.kt",
+    """                    launchIO {
+                        // Check for home settings
+                        homeSettingsService.loadCurrentSettings(user)
+                    }
+
+                    if (BuildConfig.DISCOVER_ENABLED) {""",
+    """                    if (BuildConfig.DISCOVER_ENABLED) {""",
+)
+
+# HomeViewModel.init() wrongly treated a null dataLoadingJob as "already active":
+# null?.isActive == false yields false. This prevented an initial/retry load
+# even though the user and other tabs were fully authenticated.
+update(
+    "app/src/main/java/com/github/damontecres/wholphin/ui/main/HomeViewModel.kt",
+    "if (dataLoadingJob?.isActive == false) {",
+    "if (dataLoadingJob?.isActive != true) {",
+)
+
 page = "app/src/main/java/com/github/damontecres/wholphin/ui/playback/PlaybackPage.kt"
 update(
     page,
