@@ -59,7 +59,8 @@ class WholRecViewModel @Inject constructor(
                 _state.value = _state.value.copy(
                     channelId = channelId,
                     recording = active,
-                    message = null,
+                    // Don't erase a useful HTTP/DVR error at the next 15s poll.
+                    message = if (_state.value.channelId == channelId) _state.value.message else null,
                 )
             } catch (e: Exception) {
                 _state.value = _state.value.copy(channelId = channelId, message = e.message)
