@@ -40,6 +40,29 @@ def update(relative, anchor, replacement):
     print("Patched:", relative)
 
 
+# Jellyfin 12 may return 401/403 on UserViews even after the account has
+# authenticated. If fetching default Home settings throws, upstream leaves
+# currentSettings == EMPTY, and HomePage displays a spinner forever.
+# Always publish an identified non-empty settings object on recoverable API
+# errors; HomeViewModel can then render its existing error screen instead of
+# silently waiting in the pending state. This does not hide the 401 or reset
+# credentials, and allows the user to see the real error.
+update(
+    "app/src/main/java/com/github/damontecres/wholphin/services/HomeSettingsService.kt",
+    "            val resolvedSettings = settings ?: createDefault(user.id)\\n"
+    "            currentSettings.update { resolvedSettings }",
+    """            val resolvedSettings =
+                settings ?: try {
+                    createDefault(user.id)
+                } catch (ex: CancellationException) {
+                    throw ex
+                } catch (ex: Exception) {
+                    Timber.e(ex, "Whol REC: default Home failed; surfacing library/API error instead of endless spinner")
+                    HomePageResolvedSettings(user.id, HomePageSettingsSource.DEFAULT, emptyList())
+                }
+            currentSettings.update { resolvedSettings }""",
+)
+
 page = "app/src/main/java/com/github/damontecres/wholphin/ui/playback/PlaybackPage.kt"
 update(
     page,
