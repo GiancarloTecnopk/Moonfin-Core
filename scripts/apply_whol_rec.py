@@ -100,6 +100,67 @@ update(
     "if (dataLoadingJob?.isActive != true) {",
 )
 
+# Raise only the negotiated streaming bitrate ceiling from 100 to 200 MiBit/s.
+# Crucially, persistent DataStore on existing Fire TV installations contains
+# the previous 100 value; changing the constant alone does not migrate it.
+# A once-only targeted migration updates precisely that old value and leaves
+# all user settings, codec selection and future manual choices untouched.
+update(
+    "app/src/main/java/com/github/damontecres/wholphin/preferences/AppPreference.kt",
+    "const val DEFAULT_BITRATE = 100 * MEGA_BIT",
+    "const val DEFAULT_BITRATE = 200 * MEGA_BIT",
+)
+prefs_service = "app/src/main/java/com/github/damontecres/wholphin/services/UserPreferencesService.kt"
+update(
+    prefs_service,
+    "import androidx.datastore.core.DataStore",
+    "import android.content.Context\n"
+    "import androidx.datastore.core.DataStore\n"
+    "import com.github.damontecres.wholphin.preferences.AppPreference\n"
+    "import com.github.damontecres.wholphin.preferences.updatePlaybackPreferences\n"
+    "import dagger.hilt.android.qualifiers.ApplicationContext\n"
+    "import kotlinx.coroutines.sync.Mutex\n"
+    "import kotlinx.coroutines.sync.withLock",
+)
+update(
+    prefs_service,
+    "    constructor(\n        private val serverRepository: ServerRepository,",
+    "    constructor(\n"
+    "        @param:ApplicationContext private val context: Context,\n"
+    "        private val serverRepository: ServerRepository,",
+)
+update(
+    prefs_service,
+    "    ) {\n        val flow: Flow<UserPreferences> =",
+    "    ) {\n"
+    "        private val bitrateMigrationMutex = Mutex()\n\n"
+    "        val flow: Flow<UserPreferences> =",
+)
+update(
+    prefs_service,
+    "        suspend fun getCurrent(): UserPreferences = flow.first()",
+    """        suspend fun getCurrent(): UserPreferences {
+            // Migrate before PlaybackViewModel.init() reads maxBitrate.
+            bitrateMigrationMutex.withLock {
+                val flags = context.getSharedPreferences("whol_rec_migrations", Context.MODE_PRIVATE)
+                if (!flags.getBoolean("bitrate200_v1", false)) {
+                    preferencesDataStore.updateData { saved ->
+                        if (shouldUpgradeLegacyMaxBitrate(saved.playbackPreferences.maxBitrate, false)) {
+                            saved.updatePlaybackPreferences {
+                                maxBitrate = AppPreference.DEFAULT_BITRATE
+                            }
+                        } else {
+                            saved
+                        }
+                    }
+                    // Later manually selecting 100 must remain possible.
+                    flags.edit().putBoolean("bitrate200_v1", true).apply()
+                }
+            }
+            return flow.first()
+        }""",
+)
+
 page = "app/src/main/java/com/github/damontecres/wholphin/ui/playback/PlaybackPage.kt"
 update(
     page,
