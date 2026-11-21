@@ -17,7 +17,7 @@ repo = Path(__file__).resolve().parent.parent
 overlay = repo / "whol_rec_overlay"
 
 for source in sorted(overlay.rglob("*")):
-    if not source.is_file():
+    if not source.is_file() or source.name == 'README.md':
         continue
     target = root / source.relative_to(overlay)
     target.parent.mkdir(parents=True, exist_ok=True)
