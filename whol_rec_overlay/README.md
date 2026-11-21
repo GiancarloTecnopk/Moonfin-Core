@@ -47,6 +47,18 @@ L'integrazione del codice non implica che gli script NAS siano eseguibili
 finché non viene configurato un endpoint HTTP reale nel pannello. I comandi
 DVR/EPG devono essere collaudati sul backend Jellyfin 12 e sul Fire TV Cube.
 
+## Correzione REC Live TV HTTP 500 (post #17)
+
+Il server Jellyfin richiede che `POST /LiveTv/Timers` contenga
+`ServiceName` per selezionare il servizio DVR. Il prototipo originale
+costruiva il timer manuale senza questo campo, provocando un HTTP 500.
+La correzione chiama prima `GET /LiveTv/Timers/Defaults` e riutilizza
+`ServiceName`, `ServerId`, `Priority` e `KeepUntil` restituiti dal
+server, mantenendo `ProgramId = null` per la registrazione senza EPG.
+Sono inclusi test che verificano i campi del timer, il limite della durata
+e la gestione degli errori. Nessun cambiamento ai motori video, DTS/HDR,
+package o firma persistente.
+
 ## Player
 **Nessuna alterazione** di ExoPlayer/MPV, HDR, Dolby Vision, selezione audio e
 streaming: l'esperimento deve confrontare la qualità originale di Wholphin
