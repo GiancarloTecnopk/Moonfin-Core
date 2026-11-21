@@ -83,7 +83,26 @@ update(
 update(
     gradle,
     'versionName = gitDescribe.trim().removePrefix("v").ifBlank { "0.0.0" }',
-    'versionName = "1.2.0-whol-rec-test1"',
+    'versionName = "1.2.0-2-gwholrec"',
+)
+
+# Wholphin parses version names using git-describe strict syntax in
+# UpdateViewModel.currentVersion. A label such as "1.2.0-whol-rec-test1"
+# causes IllegalArgumentException as soon as Settings is opened.
+update(
+    gradle,
+    'versionCode = gitTags.trim().lines().size',
+    'versionCode = 20001002',
+)
+# Never offer upstream Wholphin's (different-package) APK as a self-update.
+update(gradle, 'setFeatureFlag(featureUpdate, true)',
+       'setFeatureFlag(featureUpdate, false)')
+
+# Guard against any future custom version string bringing back a settings crash.
+update(
+    "app/src/main/java/com/github/damontecres/wholphin/services/UpdateChecker.kt",
+    'return Version.fromString(pkgInfo.versionName!!)',
+    'return Version.tryFromString(pkgInfo.versionName) ?: Version(1, 2, 0)',
 )
 
 res = "app/src/main/res/values/strings.xml"
