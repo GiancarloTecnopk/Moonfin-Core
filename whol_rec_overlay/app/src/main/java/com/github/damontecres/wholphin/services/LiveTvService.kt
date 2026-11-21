@@ -5,7 +5,7 @@ import com.github.damontecres.wholphin.ui.toServerString
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.liveTvApi
 import org.jellyfin.sdk.model.api.TimerInfoDto
-import java.time.OffsetDateTime
+import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.util.UUID
 import javax.inject.Inject
@@ -69,7 +69,7 @@ class LiveTvService @Inject constructor(
     ) {
         require(minutes in 1..480) { "Recording duration must be between 1 and 480 minutes" }
         check(activeManualRecording(channelId) == null) { "A Whol REC recording is already active" }
-        val now = OffsetDateTime.now(ZoneOffset.UTC)
+        val now = LocalDateTime.now(ZoneOffset.UTC)
         val timer = TimerInfoDto(
             channelId = channelId,
             channelName = channelName,
@@ -87,7 +87,7 @@ class LiveTvService @Inject constructor(
     /** Never cancel a different programme/series timer when stopping manual REC. */
     suspend fun activeManualRecording(channelId: UUID): TimerInfoDto? {
         val timers by api.liveTvApi.getTimers(channelId = channelId.toServerString())
-        val now = OffsetDateTime.now(ZoneOffset.UTC)
+        val now = LocalDateTime.now(ZoneOffset.UTC)
         return selectActiveWholRecTimer(timers.items, channelId, now)
     }
 
@@ -105,7 +105,7 @@ class LiveTvService @Inject constructor(
 internal fun selectActiveWholRecTimer(
     timers: List<TimerInfoDto>,
     channelId: UUID,
-    now: OffsetDateTime,
+    now: LocalDateTime,
 ): TimerInfoDto? = timers.firstOrNull { timer ->
     timer.channelId == channelId &&
         timer.name?.startsWith("Whol REC - ") == true &&
