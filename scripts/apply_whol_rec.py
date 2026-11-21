@@ -6,6 +6,7 @@ modified. Only Jellyfin DVR service, Live TV OSD, package identity and
 null-safe DVR scheduling are changed.
 """
 from pathlib import Path
+import os
 import shutil
 import sys
 
@@ -13,6 +14,11 @@ if len(sys.argv) != 2:
     raise SystemExit("Usage: python scripts/apply_whol_rec.py /path/to/wholphin-upstream")
 
 root = Path(sys.argv[1]).resolve()
+# GitHub Actions run numbers increment automatically on every build of this
+# workflow, so every newly signed APK has a greater versionCode.
+sequence = max(3, int(os.environ.get("GITHUB_RUN_NUMBER", "3")))
+rec_version_code = 20001000 + sequence
+rec_version_name = f"1.2.0-{sequence}-gwholrec"
 repo = Path(__file__).resolve().parent.parent
 overlay = repo / "whol_rec_overlay"
 
@@ -83,7 +89,7 @@ update(
 update(
     gradle,
     'versionName = gitDescribe.trim().removePrefix("v").ifBlank { "0.0.0" }',
-    'versionName = "1.2.0-2-gwholrec"',
+    f'versionName = "{rec_version_name}"',
 )
 
 # Wholphin parses version names using git-describe strict syntax in
@@ -92,7 +98,7 @@ update(
 update(
     gradle,
     'versionCode = gitTags.trim().lines().size',
-    'versionCode = 20001002',
+    f'versionCode = {rec_version_code}',
 )
 # Never offer upstream Wholphin's (different-package) APK as a self-update.
 update(gradle, 'setFeatureFlag(featureUpdate, true)',
@@ -105,9 +111,28 @@ update(
     'return Version.tryFromString(pkgInfo.versionName) ?: Version(1, 2, 0)',
 )
 
+# Wholphin already provides persistent CI signing for release builds. Use the
+# EXACT SAME CI signing configuration for debug REC packages. Without this
+# change GitHub runners generate a new random ~/.android/debug.keystore each
+# time, causing INSTALL_FAILED_UPDATE_INCOMPATIBLE on every update.
+update(
+    gradle,
+    '        debug {\n            isMinifyEnabled = false',
+    '        debug {\n            if (shouldSign.get()) {\n'
+    '                signingConfig = signingConfigs.getByName("ci")\n'
+    '            }\n            isMinifyEnabled = false',
+)
+update(
+    gradle,
+    '                storeFile = file("ci.keystore")',
+    '                storeFile = file("ci.keystore")\n'
+    '                storeType = System.getenv("KEY_STORE_TYPE").takeIf { !it.isNullOrBlank() } ?: "jks"',
+)
+
 res = "app/src/main/res/values/strings.xml"
 update(res, '<string name="app_name" translatable="false">Wholphin</string>',
        '<string name="app_name" translatable="false">Wholphin REC Test</string>')
 update(res, '<string name="app_name_long" translatable="false">Wholphin</string>',
        '<string name="app_name_long" translatable="false">Wholphin REC Test</string>')
+print(f"Whol REC build version: {rec_version_name} ({rec_version_code}); persistent CI signing for debug and release.")
 print("Whol REC overlay successfully applied (Jellyfin DVR manual REC / STOP / TV OSD).")
