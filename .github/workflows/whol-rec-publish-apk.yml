@@ -1,0 +1,83 @@
+name: Whol REC - publish verified APK from successful Actions run
+on:
+  push:
+    branches:
+      - whol-rec
+    paths:
+      - .github/workflows/whol-rec-publish-apk.yml
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+jobs:
+  publish:
+    name: Publish prebuilt Wholphin REC test APK (no recompile)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_RUN: "44904111328"
+      SOURCE_ARTIFACT: WholphinREC-Jellyfin12-FireTV-TEST
+      APK: WholphinREC_Jellyfin12_FireTV_TEST.apk
+      RELEASE_TAG: whol-rec-jellyfin12-firetv-test-1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify the source build finished successfully
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(gh run view "$SOURCE_RUN" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)"
+          test "$status" = "success"
+          echo "Using signed-debug APK from successful run $SOURCE_RUN (not rebuilding)." >> "$GITHUB_STEP_SUMMARY"
+      - name: Download already built test APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          gh run download "$SOURCE_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name "$SOURCE_ARTIFACT" --dir release
+          test -s "release/$APK"
+          du -h "release/$APK"
+      - name: Verify package name version and APK signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$tools/aapt" dump badging "release/$APK" | tee release/identity.txt
+          grep -F "package: name='com.github.damontecres.wholphin.wholrec.debug'" release/identity.txt
+          grep -F "versionName='1.2.0-whol-rec-test1'" release/identity.txt
+          grep -F "application-label:'Wholphin REC Test'" release/identity.txt
+          "$tools/apksigner" verify --verbose --print-certs "release/$APK" | tee release/signature.txt
+          (cd release && sha256sum "$APK" > SHA256SUMS.txt)
+      - name: Publish a permanent GitHub pre-release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          cat > notes.md <<'EOF'
+          # Wholphin REC - experimental Jellyfin 12 / Fire TV build
+          Test version with manual live TV recording without EPG, REC/STOP,
+          duration options, recording indicator and confirm-stop dialog.
+          Built from official Wholphin Jellyfin 12 development code with
+          independent REC overlay; playback engines unchanged.
+          Android application ID: com.github.damontecres.wholphin.wholrec.debug
+          (independent of Moonfin REC and upstream Wholphin).
+          This build is signed with the Android DEBUG key, for testing only.
+          **Install without uninstalling Moonfin REC.**
+          The Jellyfin DVR backend may behave differently on different tuners;
+          verify short and long recordings on your server.
+          EOF
+          gh release create "$RELEASE_TAG" "release/$APK" "release/SHA256SUMS.txt" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target whol-rec \
+            --prerelease \
+            --latest=false \
+            --title "Wholphin REC - Jellyfin 12 / Fire TV TEST 1" \
+            --notes-file notes.md
+          url="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url)"
+          echo "$url" | tee -a "$GITHUB_STEP_SUMMARY"
