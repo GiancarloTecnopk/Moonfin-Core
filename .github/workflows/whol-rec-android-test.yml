@@ -1,0 +1,106 @@
+name: Whol REC - Jellyfin 12 Fire TV experimental APK
+on:
+  push:
+    branches:
+      - whol-rec
+    paths:
+      - .github/workflows/whol-rec-android-test.yml
+      - scripts/apply_whol_rec.py
+      - whol_rec_overlay/**
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android:
+    name: Build isolated Wholphin REC Kotlin TV test
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8"
+      CI: "true"
+    steps:
+      - name: Checkout our isolated REC overlay branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout Wholphin Jellyfin 12 development baseline
+        uses: actions/checkout@v4
+        with:
+          repository: damontecres/Wholphin
+          ref: 572090863cb7d775cb42818fec632e32fb297dc9
+          path: wholphin-upstream
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify upstream commit to keep test reproducible
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C wholphin-upstream rev-parse HEAD)" = "572090863cb7d775cb42818fec632e32fb297dc9"
+          echo 'Wholphin Jellyfin 12 development baseline validated' >> "$GITHUB_STEP_SUMMARY"
+      - name: Free disk for Gradle and Android build
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL || true
+          docker system prune -af || true
+          df -h .
+      - name: Setup JDK 21 (upstream Wholphin requirement)
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: "21"
+      - name: Setup Android SDK 37 and build tools
+        uses: android-actions/setup-android@v4
+        with:
+          packages: "platform-tools build-tools;36.0.0 platforms;android-37"
+      - name: Apply our manual REC/STOP and dedicated TV package
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/apply_whol_rec.py wholphin-upstream
+          grep -Fq 'com.github.damontecres.wholphin.wholrec' wholphin-upstream/app/build.gradle.kts
+          grep -Fq 'suspend fun startManualRecording(' wholphin-upstream/app/src/main/java/com/github/damontecres/wholphin/services/LiveTvService.kt
+          grep -Fq 'WholRecControls(' wholphin-upstream/app/src/main/java/com/github/damontecres/wholphin/ui/playback/PlaybackPage.kt
+      - name: Compile and run manual REC timer isolation tests
+        shell: bash
+        working-directory: wholphin-upstream
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew --no-daemon --max-workers=2 :app:testDefaultDebugUnitTest \
+            --tests com.github.damontecres.wholphin.services.WholRecTimerPolicyTest
+      - name: Build Android TV APK with Wholphin original playback engines
+        shell: bash
+        working-directory: wholphin-upstream
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --max-workers=2 :app:assembleDefaultDebug
+          find app/build/outputs/apk/default/debug -name '*.apk' -type f -ls
+      - name: Verify different package name and debug APK signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd wholphin-upstream
+          apk="$(find app/build/outputs/apk/default/debug -name '*.apk' -type f | grep -vE '(armeabi-v7a|arm64-v8a|x86_64)' | head -1)"
+          test -n "$apk"
+          test -s "$apk"
+          cp "$apk" ../WholphinREC_Jellyfin12_FireTV_TEST.apk
+          sdk="$ANDROID_HOME"
+          tools="$(find "$sdk/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$tools/aapt" dump badging "../WholphinREC_Jellyfin12_FireTV_TEST.apk" | tee ../whol-rec-identity.txt
+          grep -F "package: name='com.github.damontecres.wholphin.wholrec.debug'" ../whol-rec-identity.txt
+          grep -F "application-label:'Wholphin REC Test'" ../whol-rec-identity.txt
+          "$tools/apksigner" verify --verbose --print-certs "../WholphinREC_Jellyfin12_FireTV_TEST.apk" | tee ../whol-rec-signature.txt
+          cd ..
+          sha256sum WholphinREC_Jellyfin12_FireTV_TEST.apk > WholphinREC_SHA256SUMS.txt
+          echo 'REC without EPG + STOP and TV OSD compiled and debug-signed; install beside Moonfin REC and upstream Wholphin' >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish test APK for Fire TV Cube
+        uses: actions/upload-artifact@v4
+        with:
+          name: WholphinREC-Jellyfin12-FireTV-TEST
+          path: |
+            WholphinREC_Jellyfin12_FireTV_TEST.apk
+            WholphinREC_SHA256SUMS.txt
+            whol-rec-identity.txt
+          if-no-files-found: error
+          retention-days: 30
